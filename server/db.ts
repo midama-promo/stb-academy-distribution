@@ -1,0 +1,1453 @@
+import 'dotenv/config';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import { fileURLToPath } from 'url';
+import {
+  remotePersistenceConfigured,
+  remoteGetState,
+  remoteInitializeState,
+  remoteUpdateState,
+  remoteEnsureDatabase,
+  remoteStorageConfigured,
+  remoteCheckAuth,
+} from './remote.ts';
+
+export const isProduction = process.env.NODE_ENV === 'production' || (Boolean(process.env.K_SERVICE) && !process.env.K_SERVICE?.startsWith('ais-dev-'));
+
+export interface User {
+  id: string;
+  email: string;
+  name: string; // Artist or Label Name / Artist Name
+  realFirstName?: string;
+  realSurname?: string;
+  artistName?: string;
+  role: 'admin' | 'client';
+  passwordHash: string;
+  status: 'active' | 'pending_activation' | 'disabled';
+  disabledReason?: string;
+  inviteToken?: string;
+  resetToken?: string;
+  resetTokenExpiry?: string;
+  createdAt: string;
+  phone?: string;
+  country?: string;
+  lastLoginAt?: string;
+  planId?: 'free' | 'starter' | 'pro'; // Legacy plan field retained for backward-compatible records only
+  artistLibrary?: ArtistCredit[];
+  planExpiresAt?: string | null;
+  lastPaymentReference?: string;
+  planActivatedAt?: string | null;
+  contractAcceptedAt?: string;
+  contractSignature?: string;
+  contractText?: string;
+  contractVersion?: string;
+  adminRoyaltyAllocation?: number;
+  isPlatformOwner?: boolean;
+  payoutProfile?: { provider: 'PayPal'; email?: string; mobile?: string; username?: string; paypalMeUrl?: string; linkedAt?: string };
+}
+
+export interface ArtistCredit {
+  id?: string;
+  name: string;
+  role?: 'primary' | 'featured';
+  spotifyProfileUrl?: string;
+  appleMusicProfileUrl?: string;
+  spotifyProfileCreateRequested?: boolean;
+  appleMusicProfileCreateRequested?: boolean;
+  socialMediaLinks?: string[];
+}
+
+export interface TrackItem {
+  id: string;
+  trackNumber: number;
+  title: string;
+  version?: string;
+  filename: string;
+  storedFilename?: string;
+  fileUrl: string;
+  fileSize: number;
+  duration?: number;
+  isrc?: string;
+  explicit?: boolean;
+  // Per-song artist metadata
+  primaryArtist?: string;
+  primaryArtistSpotifyUrl?: string;
+  primaryArtistAppleMusicUrl?: string;
+  featuredArtists?: string[];
+  artistProfiles?: ArtistCredit[];
+}
+
+export type ReleaseStatus =
+  | 'Pending Review'
+  | 'Approved'
+  | 'Delivered'
+  | 'Completed'
+  | 'In Distribution'
+  | 'Rejected'
+  | 'Denied'
+  | 'Corrections Required'
+  | 'Takedown Requested'
+  | 'Takedown Processing'
+  | 'Takedown Completed';
+
+export interface ReleaseDocumentItem {
+  id: string;
+  title: string;
+  filename: string;
+  storedFilename?: string;
+  fileUrl: string;
+  fileSize: number;
+  uploadedAt: string;
+}
+
+export interface PreSaveLink {
+  id: string;
+  label: string;
+  url: string;
+}
+
+export interface Release {
+  royaltyAmount?: number;
+  grossRoyaltyAmount?: number;
+  labelShareAmount?: number;
+  normalAdminShareAmount?: number;
+  superAdminShareAmount?: number;
+  id: string;
+  userId: string;
+  userEmail: string;
+  artistLabelName: string;
+  labelName?: string;
+  refNumber: string; // e.g. STB-2026-XXXX
+  title: string;
+  releaseType: 'Single' | 'EP' | 'Album';
+  primaryArtists: string[];
+  featuredArtists: string[];
+  primaryArtistProfiles?: ArtistCredit[];
+  featuredArtistProfiles?: ArtistCredit[];
+  artistProfiles?: ArtistCredit[];
+  genre: string;
+  subGenre?: string;
+  language?: string;
+  lyricsLanguage?: string;
+  version?: string;
+  lyrics?: string;
+  previewStart?: number;
+  dspSelections?: string[];
+  composers?: string[];
+  producers?: string[];
+  publishers?: string[];
+  targetReleaseDate: string;
+  previouslyReleased: boolean;
+  previousReleaseDetails?: string;
+  originalReleaseDate?: string;
+  previousISRC?: string;
+  previousUPC?: string;
+  isrc?: string;
+  upc?: string;
+  cLine?: string; // Copyright notice
+  pLine?: string; // Sound recording copyright notice
+  artworkUrl: string;
+  artworkFilename: string;
+  storedArtworkFilename?: string;
+  artworkDimensions?: { width: number; height: number };
+  tracks: TrackItem[];
+  audioMasterPending?: boolean;
+  documents?: ReleaseDocumentItem[];
+  clientNotes?: string;
+  adminNotes?: string;
+  denialReason?: string;
+  approvalDate?: string;
+  preSaveLinks?: PreSaveLink[];
+  status: ReleaseStatus;
+  allowPublicShare: boolean;
+  submittedAt: string;
+  updatedAt: string;
+  statusHistory?: Array<{
+    status: ReleaseStatus;
+    note?: string;
+    timestamp: string;
+    updatedBy: string;
+  }>;
+}
+
+export interface WithdrawalRequest {
+  id: string;
+  userId: string;
+  userEmail: string;
+  clientName: string;
+  amount: number;
+  currency: 'ZAR';
+  bankName: string;
+  accountHolder: string;
+  accountNumber: string;
+  branchCode: string;
+  accountType: 'Cheque' | 'Savings' | 'Transmission' | 'Other';
+  payoutMethod?: 'PayPal';
+  payoutIdentifier?: string;
+  notes?: string;
+  paymentReference?: string;
+  liabilityAcknowledged: boolean;
+  clientConfirmedReceived?: boolean;
+  status: 'pending' | 'awaiting_confirmation' | 'paid' | 'rejected';
+  createdAt: string;
+  processedAt?: string;
+  processedBy?: string;
+  adminNote?: string;
+}
+
+export interface SupportMessage { id:string; userId:string; userEmail:string; userName:string; senderRole:'client'|'admin'; senderEmail:string; message:string; createdAt:string; readAt?:string; }
+
+export interface Enquiry {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  subject: string;
+  message: string;
+  createdAt: string;
+  status: 'new' | 'read' | 'replied';
+}
+
+export interface CatalogueTrack extends TrackItem {
+  isrc?: string;
+}
+
+export interface CatalogueEntry {
+  id: string;
+  releaseId?: string;
+  userId: string;
+  title: string;
+  artistLabelName: string;
+  releaseType: 'Single' | 'EP' | 'Album';
+  primaryArtists: string[];
+  featuredArtists: string[];
+  genre: string;
+  subGenre?: string;
+  language?: string;
+  composers: string[];
+  producers: string[];
+  isrc?: string;
+  upc?: string;
+  catalogueReleaseDate?: string;
+  /** Total royalty amount assigned to this legacy catalogue record, in ZAR. */
+  royaltyAmount?: number;
+  previouslyReleased: boolean;
+  previousReleaseDetails?: string;
+  cLine?: string;
+  pLine?: string;
+  artworkUrl?: string;
+  artworkFilename?: string;
+  storedArtworkFilename?: string;
+  artworkDimensions?: { width: number; height: number };
+  tracks: CatalogueTrack[];
+  documents?: ReleaseDocumentItem[];
+  notes?: string;
+  addedAt: string;
+  addedBy: string;
+  distributionStatus: 'Not Queued' | 'Ready for Mid Ama Distribution' | 'Submitted to Mid Ama Distribution' | 'Distributed' | 'Rejected';
+  distributionNote?: string;
+  updatedAt: string;
+}
+
+export interface NotificationLog {
+  id: string;
+  recipientEmail: string;
+  recipientName: string;
+  subject: string;
+  template: 'invitation' | 'submission_received' | 'status_change' | 'corrections_required' | 'approved_distribution' | 'denied' | 'password_reset' | string;
+  metadata: Record<string, any>;
+  sentAt: string;
+  status: 'delivered' | 'queued';
+}
+
+export interface EmailCampaignRecipient {
+  userId: string;
+  email: string;
+  name: string;
+  status: 'pending' | 'sent' | 'failed';
+  sentAt?: string;
+  resendId?: string;
+  error?: string;
+}
+
+export interface EmailCampaign {
+  id: string;
+  fingerprint: string;
+  subject: string;
+  message: string;
+  sender: string;
+  createdAt: string;
+  createdBy: string;
+  status: 'sending' | 'completed' | 'partial' | 'failed';
+  recipients: EmailCampaignRecipient[];
+}
+
+export interface SmartPreSavePage {
+  id: string; slug: string; title: string; artist: string; artworkUrl?: string; soundblastUrl: string;
+  /** Pre-release provider authorization/action URLs. */
+  preSaveLinks?: Array<{ label: string; url: string }>;
+  /** Direct DSP release destinations used after releaseDate. */
+  dspLinks: Array<{ label: string; url: string }>;
+  releaseDate?: string; active: boolean; createdAt: string; updatedAt: string;
+  /** Anonymous browser IDs with listener-confirmed status; no names or contact details. */
+  listenerStatuses?: Record<string, 'started' | 'pre-saved'>;
+}
+
+export interface VevoApplication {
+  id: string; userId: string; clientName: string; artistName: string; email: string;
+  notes?: string; status: 'Pending' | 'Approved' | 'Rejected'; adminNote?: string;
+  createdAt: string; updatedAt: string;
+}
+
+export interface VideoSubmission {
+  id: string; userId: string; userEmail: string; clientName: string; artistName: string;
+  videoTitle: string; videoType: 'Official Music Video' | 'Visualizer' | 'Lyric Video' | 'Other';
+  videoUrl: string; videoFilename: string; sourceDownloadUrl?: string; storedVideoFilename?: string; fileSize: number; artworkUrl?: string; artworkFilename?: string; storedArtworkFilename?: string; royaltyAmount?: number; grossRoyaltyAmount?: number; labelShareAmount?: number; normalAdminShareAmount?: number; superAdminShareAmount?: number;
+  director?: string; description?: string; youtubeDescription?: string; lyrics?: string; primaryArtists?: string[]; featuredArtists?: string[]; language?: string; songLanguage?: string; lyricsLanguage?: string; genre?: string; subGenre?: string; version?: string; labelName?: string; publisher?: string; lyricist?: string; composer?: string; contributors?: string; dspSelections?: string[]; explicit: boolean; releaseDate?: string; notes?: string;
+  status: 'Pending Review' | 'Approved' | 'Corrections Required' | 'Denied' | 'Rejected' | 'Delivered' | 'In Distribution';
+  adminNote?: string; createdAt: string; updatedAt: string;
+}
+
+export interface DatabaseSchema {
+  _version?: number;
+  users: User[];
+  releases: Release[];
+  enquiries: Enquiry[];
+  notifications: NotificationLog[];
+  catalogue: CatalogueEntry[];
+  withdrawals: WithdrawalRequest[];
+  presavePages: SmartPreSavePage[];
+  emailCampaigns: EmailCampaign[];
+  vevoApplications: VevoApplication[];
+  videoSubmissions: VideoSubmission[];
+  supportMessages: SupportMessage[];
+  siteSettings?: { logoUrl?: string; socialLinks?: Array<{ platform: string; url: string }> };
+}
+
+// ----------------------------------------------------
+// Deterministic Absolute Paths & Persistent Storage
+// ----------------------------------------------------
+const CURRENT_FILE_PATH = fileURLToPath(import.meta.url);
+export const PROJECT_ROOT = path.resolve(path.dirname(CURRENT_FILE_PATH), '..');
+
+export const DATA_DIR = path.resolve(process.env.STB_DATA_DIR || path.join(PROJECT_ROOT, 'data'));
+export const DB_FILE = path.resolve(process.env.STB_DB_FILE || path.join(DATA_DIR, 'db.json'));
+export const BACKUPS_DIR = path.join(DATA_DIR, 'backups');
+export const LAST_GOOD_FILE = path.join(DATA_DIR, 'db.json.last_good');
+export const LOCK_FILE = path.join(DATA_DIR, 'db.json.lock');
+
+export const UPLOADS_DIR = path.resolve(process.env.STB_UPLOADS_DIR || path.join(PROJECT_ROOT, 'uploads'));
+export const ARTWORK_DIR = path.join(UPLOADS_DIR, 'artwork');
+export const AUDIO_DIR = path.join(UPLOADS_DIR, 'audio');
+export const DOCUMENTS_DIR = path.join(UPLOADS_DIR, 'documents');
+
+// Ensure all persistent storage directories exist
+[DATA_DIR, BACKUPS_DIR, UPLOADS_DIR, ARTWORK_DIR, AUDIO_DIR, DOCUMENTS_DIR].forEach((dir) => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
+
+// Deterministic password hasher using HMAC-SHA256
+export function hashPassword(password: string): string {
+  const salt = 'stbacademy_mg_password_salt_2026';
+  return crypto.createHmac('sha256', salt).update(password).digest('hex');
+}
+
+export function generateToken(): string {
+  return crypto.randomBytes(24).toString('hex');
+}
+
+export function generateRefNumber(): string {
+  const year = new Date().getFullYear();
+  const randomDigits = Math.floor(1000 + Math.random() * 9000);
+  return `STB-${year}-${randomDigits}`;
+}
+
+// Backwards-compatible bootstrap hashes. Production uses the already-persisted admin records.
+// Plaintext administrator passwords are intentionally not embedded in source.
+export const remoAdminPassword = process.env.STB_ADMIN_PASSWORD_HASH || '5dedea32a787f7e35548e5e2980448d62d23bc12b100d2bc8a0bb11318b3e26a';
+
+// Only the two designated STB Academy administrators are authorized for admin endpoints.
+export const SUPER_ADMIN_EMAIL = 'remoabetswemolefi@gmail.com';
+export const NORMAL_ADMIN_EMAILS = ['mxldiroba@gmail.com', 'external.usage8@yahoo.com'];
+export const DESIGNATED_ADMIN_EMAILS = [SUPER_ADMIN_EMAIL, ...NORMAL_ADMIN_EMAILS];
+export const isSuperAdminEmail = (email: string) => email.trim().toLowerCase() === SUPER_ADMIN_EMAIL;
+
+const SESSION_TTL_SECONDS = 24 * 60 * 60;
+const SESSION_SECRET = process.env.STB_SESSION_SECRET || process.env.OTP_HASH_SECRET || 'stbacademy-development-session-secret-change-me';
+
+function base64UrlEncode(value: string): string {
+  return Buffer.from(value, 'utf8').toString('base64url');
+}
+
+function base64UrlDecode(value: string): string {
+  return Buffer.from(value, 'base64url').toString('utf8');
+}
+
+function signSessionPayload(payload: string): string {
+  return crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+}
+
+export function createSessionToken(userId: string, ttlSeconds = SESSION_TTL_SECONDS, impersonatedBy?: string): string {
+  const payload = base64UrlEncode(JSON.stringify({ sub: userId, exp: Math.floor(Date.now() / 1000) + ttlSeconds, v: 1, ...(impersonatedBy ? { actor: impersonatedBy } : {}) }));
+  return `v1.${payload}.${signSessionPayload(payload)}`;
+}
+
+export function verifySessionToken(token: string): { userId: string; expiresAt: number; impersonatedBy?: string } | null {
+  try {
+    const [version, payload, signature] = token.split('.');
+    if (version !== 'v1' || !payload || !signature) return null;
+    const expected = signSessionPayload(payload);
+    const a = Buffer.from(signature);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    const data = JSON.parse(base64UrlDecode(payload));
+    if (!data?.sub || data?.v !== 1 || !Number.isFinite(data.exp) || data.exp <= Math.floor(Date.now() / 1000)) return null;
+    return { userId: String(data.sub), expiresAt: Number(data.exp), impersonatedBy: data.actor ? String(data.actor) : undefined };
+  } catch (_) {
+    return null;
+  }
+}
+
+const INITIAL_DB: DatabaseSchema = {
+  _version: 2,
+  users: [
+    {
+      id: 'usr_admin_stbacademy',
+      email: 'mxldiroba@gmail.com',
+      name: 'STB Academy - Distribution Administration',
+      role: 'admin',
+      passwordHash: remoAdminPassword,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+      country: 'South Africa',
+      adminRoyaltyAllocation: 0,
+    },
+    {
+      id: 'usr_admin_test',
+      email: 'external.usage8@yahoo.com',
+      name: 'STB Academy Operations',
+      role: 'admin',
+      passwordHash: remoAdminPassword,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+      country: 'South Africa',
+      adminRoyaltyAllocation: 0,
+    },
+    {
+      id: 'usr_admin_002',
+      email: 'remoabetswemolefi@gmail.com',
+      name: 'Remoabetswe Molefi — STB Academy Administrator',
+      role: 'admin',
+      passwordHash: remoAdminPassword,
+      status: 'active',
+      createdAt: '2026-09-24T10:44:00.000Z',
+      country: 'South Africa',
+    },
+  ],
+  releases: [],
+  enquiries: [],
+  notifications: [],
+  catalogue: [],
+  withdrawals: [],
+  presavePages: [],
+  emailCampaigns: [],
+  vevoApplications: [],
+  videoSubmissions: [],
+  supportMessages: [],
+  siteSettings: { logoUrl: '', socialLinks: [] },
+};
+
+// ----------------------------------------------------
+// Synchronous sleep helper for concurrency backoff
+// ----------------------------------------------------
+function sleepMs(ms: number) {
+  try {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  } catch (_) {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {}
+  }
+}
+
+// ----------------------------------------------------
+// Inter-Process File Locking
+// ----------------------------------------------------
+function withFileLock<T>(fn: () => T): T {
+  const maxRetries = 120;
+  const retryIntervalMs = 25;
+  const staleLockAgeMs = 12000; // 12 seconds
+  let acquired = false;
+  let lockFd: number | null = null;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // O_CREAT | O_EXCL flag creates the file only if it doesn't already exist
+      lockFd = fs.openSync(LOCK_FILE, 'wx');
+      fs.writeFileSync(lockFd, `${process.pid}:${Date.now()}`);
+      acquired = true;
+      break;
+    } catch (err: any) {
+      if (err.code === 'EEXIST') {
+        try {
+          const stat = fs.statSync(LOCK_FILE);
+          if (Date.now() - stat.mtimeMs > staleLockAgeMs) {
+            console.warn(`[DB] Breaking stale lock file older than ${staleLockAgeMs}ms`);
+            try { fs.unlinkSync(LOCK_FILE); } catch (_) {}
+          }
+        } catch (_) {}
+        sleepMs(retryIntervalMs);
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  if (!acquired) {
+    throw new Error(`Database lock timeout: failed to acquire lock on ${LOCK_FILE} after ${maxRetries * retryIntervalMs}ms`);
+  }
+
+  try {
+    return fn();
+  } finally {
+    if (lockFd !== null) {
+      try { fs.closeSync(lockFd); } catch (_) {}
+    }
+    try {
+      fs.unlinkSync(LOCK_FILE);
+    } catch (_) {}
+  }
+}
+
+// ----------------------------------------------------
+// Authoritative Persistent Database Engine
+// ----------------------------------------------------
+class Database {
+  private cachedData: DatabaseSchema | null = null;
+  private lastMtimeMs: number = -1;
+  private remoteVersion: number = 0;
+
+  constructor() {
+    if (remotePersistenceConfigured) remoteEnsureDatabase();
+    if (isProduction || process.env.REQUIRE_NEON_DATABASE === 'true') {
+      if (!remotePersistenceConfigured) {
+        const missing = [];
+        if (!process.env.STB_DATABASE_URL) missing.push('STB_DATABASE_URL');
+        const err = new Error(
+          `[FATAL PRODUCTION CONFIGURATION ERROR] The STB Academy application is running in production mode, ` +
+          `but required Neon PostgreSQL environment variable(s) are missing: ${missing.join(', ')}. ` +
+          `Silent fallback to ephemeral local JSON storage (data/db.json) is strictly prohibited in production ` +
+          `because container restarts will cause data loss. Configure a brand-new STB_DATABASE_URL in your Render environment.`
+        );
+        console.error('\n' + '!'.repeat(80));
+        console.error(err.message);
+        console.error('!'.repeat(80) + '\n');
+        throw err;
+      }
+      this.ensureRemoteInitialized();
+    } else {
+      if (remotePersistenceConfigured) {
+        console.log('[DB] Development mode: Neon PostgreSQL persistence enabled.');
+        this.ensureRemoteInitialized();
+      } else {
+        console.warn('[DB] Development mode: using local JSON database (data/db.json). NOTE: Production strictly requires Neon PostgreSQL.');
+        this.ensureInitialized();
+      }
+    }
+  }
+
+  // Validates schema integrity and applies migrations if necessary
+  private validateAndMigrate(parsed: any): DatabaseSchema {
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error('Database payload is not a valid JSON object');
+    }
+
+    const users: User[] = Array.isArray(parsed.users) ? parsed.users : [];
+    const releases: Release[] = Array.isArray(parsed.releases) ? parsed.releases : [];
+    const enquiries: Enquiry[] = Array.isArray(parsed.enquiries) ? parsed.enquiries : [];
+    const notifications: NotificationLog[] = Array.isArray(parsed.notifications) ? parsed.notifications : [];
+    // STB Academy no longer stores standalone catalogue entries. Clear any legacy records on migration.
+    const catalogue: CatalogueEntry[] = [];
+    const withdrawals: WithdrawalRequest[] = Array.isArray(parsed.withdrawals) ? parsed.withdrawals.map((entry:any)=>{ const { whatsappNumber:_whatsappNumber, whatsappProofSent:_whatsappProofSent, ...clean } = entry || {}; return clean as WithdrawalRequest; }) : [];
+    const presavePages: SmartPreSavePage[] = Array.isArray(parsed.presavePages) ? parsed.presavePages : [];
+    const emailCampaigns: EmailCampaign[] = Array.isArray(parsed.emailCampaigns) ? parsed.emailCampaigns : [];
+    const vevoApplications: VevoApplication[] = Array.isArray(parsed.vevoApplications) ? parsed.vevoApplications : [];
+    const videoSubmissions: VideoSubmission[] = Array.isArray(parsed.videoSubmissions) ? parsed.videoSubmissions : [];
+    const supportMessages: SupportMessage[] = Array.isArray(parsed.supportMessages) ? parsed.supportMessages : [];
+    const siteSettings = parsed.siteSettings && typeof parsed.siteSettings === 'object' ? parsed.siteSettings : { logoUrl: '', socialLinks: [] };
+
+    // Ensure designated platform administrator accounts exist idempotently
+    // 1. Remoabetswe Molefi (Founder / Distribution Manager)
+    // Remove the retired legacy administrator account from the STB Academy tenant.
+    for (let i = users.length - 1; i >= 0; i--) {
+      if (users[i].email.toLowerCase() === 'mogaursa4@gmail.com') users.splice(i, 1);
+    }
+    const normalAdminIndex = users.findIndex(u => u.email.toLowerCase() === 'mxldiroba@gmail.com');
+    if (normalAdminIndex === -1) users.unshift({ ...INITIAL_DB.users[0] });
+    else { users[normalAdminIndex].role = 'admin'; users[normalAdminIndex].status = 'active'; if (typeof users[normalAdminIndex].adminRoyaltyAllocation !== 'number') users[normalAdminIndex].adminRoyaltyAllocation = 0; }
+
+    for (const email of ['external.usage8@yahoo.com']) {
+      if (!users.some(u => u.email.toLowerCase() === email)) {
+        const seed = INITIAL_DB.users.find(u => u.email.toLowerCase() === email);
+        if (seed) users.push({ ...seed });
+      } else {
+        const existingAdmin = users.find(u => u.email.toLowerCase() === email)!;
+        existingAdmin.role = 'admin'; existingAdmin.status = 'active';
+        if (typeof existingAdmin.adminRoyaltyAllocation !== 'number') existingAdmin.adminRoyaltyAllocation = 0;
+      }
+    }
+    const remoIndex = users.findIndex(u => u.email.toLowerCase() === 'remoabetswemolefi@gmail.com');
+    if (remoIndex === -1) {
+      users.unshift({ ...INITIAL_DB.users.find(u => u.email.toLowerCase() === 'remoabetswemolefi@gmail.com')! });
+    } else {
+      const remo = users[remoIndex];
+      // Preserve ID and existing data, guarantee admin role and active status
+      remo.role = 'admin';
+      remo.status = 'active';
+      if (!remo.passwordHash) {
+        remo.passwordHash = remoAdminPassword;
+      }
+      if (!remo.name) {
+        remo.name = 'Remoabetswe Molefi — STB Academy Administrator';
+      }
+    }
+
+    // Preserve the existing Head Office contact account if it exists, but never grant it
+    // platform-admin privileges. Existing persisted data is left untouched.
+
+    // Release schema migrations: ensure tracks, statusHistory, allowPublicShare exist
+    for (const rel of releases) {
+      if (!Array.isArray(rel.tracks)) rel.tracks = [];
+      if (!Array.isArray(rel.primaryArtists)) rel.primaryArtists = [];
+      if (!Array.isArray(rel.featuredArtists)) rel.featuredArtists = [];
+      if (typeof rel.allowPublicShare !== 'boolean') rel.allowPublicShare = false;
+      if (typeof rel.royaltyAmount !== 'number' || !Number.isFinite(rel.royaltyAmount) || rel.royaltyAmount < 0) rel.royaltyAmount = 0;
+      if (!Array.isArray(rel.statusHistory)) {
+        rel.statusHistory = [
+          {
+            status: rel.status || 'Pending Review',
+            timestamp: rel.submittedAt || new Date().toISOString(),
+            updatedBy: 'System',
+          },
+        ];
+      }
+    }
+
+    for (const entry of catalogue) {
+      if (typeof entry.royaltyAmount !== 'number' || !Number.isFinite(entry.royaltyAmount) || entry.royaltyAmount < 0) entry.royaltyAmount = 0;
+      if (!Array.isArray(entry.primaryArtists)) entry.primaryArtists = [];
+      if (!Array.isArray(entry.featuredArtists)) entry.featuredArtists = [];
+      if (!Array.isArray(entry.tracks)) entry.tracks = [];
+    }
+
+    // STB Academy starts with a clean release-only catalogue. Legacy catalogue records are intentionally purged.
+    catalogue.length = 0;
+
+    return {
+      _version: 3,
+      users,
+      releases,
+      enquiries,
+      notifications,
+      catalogue,
+      withdrawals,
+      presavePages,
+      emailCampaigns,
+      vevoApplications,
+      videoSubmissions,
+      supportMessages,
+      siteSettings: { logoUrl: '', socialLinks: Array.isArray(siteSettings.socialLinks) ? siteSettings.socialLinks.filter((link:any)=>!String(link?.url||'').toLowerCase().includes('slacwave') && !String(link?.platform||'').toLowerCase().includes('slacwave')) : [] },
+    };
+  }
+
+  // Neon PostgreSQL is authoritative for hosted application state.
+  private ensureRemoteInitialized() {
+    try {
+      const remote = remoteGetState();
+      if (remote) {
+        const validated = this.validateAndMigrate(remote.state);
+        const currentVersion = Number(remote.version);
+        if (JSON.stringify(remote.state) !== JSON.stringify(validated)) {
+          const migrated = remoteUpdateState(currentVersion, validated);
+          if (!migrated) throw new Error('Hosted database changed during STB Academy migration. Restart the service to retry safely.');
+          this.remoteVersion = Number(migrated.version);
+          this.cachedData = validated;
+          console.log('[DB] Existing Neon state migrated for STB Academy: legacy catalogue cleared, retired admin removed, new administrator records ensured.');
+        } else {
+          this.remoteVersion = currentVersion;
+          this.cachedData = validated;
+        }
+        console.log(`[DB] Hosted database verified: ${validated.users.length} users, ${validated.releases.length} releases, ${validated.catalogue.length} catalogue entries.`);
+        return;
+      }
+
+      // A new Neon database starts with the application's defined system seed only.
+      // Customer records are never imported from ZIP backups or another provider automatically.
+      const seed: DatabaseSchema = JSON.parse(JSON.stringify(INITIAL_DB));
+      const initialized = remoteInitializeState(this.validateAndMigrate(seed));
+      this.remoteVersion = Number(initialized.version);
+      this.cachedData = this.validateAndMigrate(initialized.state);
+      console.log(`[DB] Hosted database initialized from bundled recovery data: ${this.cachedData.users.length} users.`);
+    } catch (error) {
+      throw new Error(`[DB] Hosted persistence initialization failed. Set STB_DATABASE_URL correctly; the application creates its own tables automatically. ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  // Idempotent startup initialization: never resets or deletes existing records
+  private ensureInitialized() {
+    withFileLock(() => {
+      if (fs.existsSync(DB_FILE)) {
+        try {
+          const raw = fs.readFileSync(DB_FILE, 'utf-8');
+          const parsed = JSON.parse(raw);
+          const validated = this.validateAndMigrate(parsed);
+          // Save back any non-destructive schema migrations or missing admin anchors
+          this.atomicWrite(validated, false);
+          this.cachedData = validated;
+          this.lastMtimeMs = fs.statSync(DB_FILE).mtimeMs;
+          console.log(`[DB] Authoritative database verified: ${validated.users.length} users, ${validated.releases.length} releases, ${validated.catalogue.length} catalogue entries.`);
+          return;
+        } catch (err) {
+          console.error('[DB] Primary database file read/parse error. Attempting last known good recovery...', err);
+          const recovered = this.tryRecover();
+          if (recovered) {
+            this.atomicWrite(recovered, false);
+            this.cachedData = recovered;
+            this.lastMtimeMs = fs.statSync(DB_FILE).mtimeMs;
+            console.log('[DB] Successfully recovered database from last known good backup.');
+            return;
+          }
+          throw new Error(`[DB] Database integrity stop: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      // If file does NOT exist, create clean initial database
+      console.log(`[DB] No existing database at ${DB_FILE}. Initializing clean persistent store...`);
+      this.atomicWrite(INITIAL_DB, false);
+      this.cachedData = INITIAL_DB;
+      this.lastMtimeMs = fs.statSync(DB_FILE).mtimeMs;
+    });
+  }
+
+  // Recovery helper from last known good file or rolling backups
+  private tryRecover(): DatabaseSchema | null {
+    if (fs.existsSync(LAST_GOOD_FILE)) {
+      try {
+        const raw = fs.readFileSync(LAST_GOOD_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        return this.validateAndMigrate(parsed);
+      } catch (_) {}
+    }
+
+    try {
+      if (fs.existsSync(BACKUPS_DIR)) {
+        const backups = fs.readdirSync(BACKUPS_DIR)
+          .filter(f => f.startsWith('db_backup_') && f.endsWith('.json'))
+          .sort()
+          .reverse();
+
+        for (const backup of backups) {
+          try {
+            const raw = fs.readFileSync(path.join(BACKUPS_DIR, backup), 'utf-8');
+            const parsed = JSON.parse(raw);
+            return this.validateAndMigrate(parsed);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  // Atomic write with fsync, temporary file rename, and rotating backup creation
+  private atomicWrite(data: DatabaseSchema, createRollingBackup = true) {
+    fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
+    fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+
+    const jsonString = JSON.stringify(data, null, 2);
+
+    // 1. Create a rolling backup if database already existed
+    if (createRollingBackup && fs.existsSync(DB_FILE)) {
+      try {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupFile = path.join(BACKUPS_DIR, `db_backup_${timestamp}.json`);
+        fs.copyFileSync(DB_FILE, backupFile);
+        fs.copyFileSync(DB_FILE, LAST_GOOD_FILE);
+
+        // Prune older backups keeping last 15
+        const files = fs.readdirSync(BACKUPS_DIR)
+          .filter(f => f.startsWith('db_backup_') && f.endsWith('.json'))
+          .sort();
+        if (files.length > 15) {
+          for (let i = 0; i < files.length - 15; i++) {
+            try { fs.unlinkSync(path.join(BACKUPS_DIR, files[i])); } catch (_) {}
+          }
+        }
+      } catch (backupErr) {
+        console.warn('[DB] Warning: Could not create backup snapshot before write:', backupErr);
+      }
+    }
+
+    // 2. Write to unique temp file
+    const uniqueId = `${process.pid}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}`;
+    const tempFile = `${DB_FILE}.tmp.${uniqueId}`;
+
+    const fd = fs.openSync(tempFile, 'w', 0o600);
+    fs.writeFileSync(fd, jsonString, { encoding: 'utf-8' });
+    // Guarantee physical flush to disk storage
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+
+    // 3. POSIX atomic rename replaces destination file without interruption
+    fs.renameSync(tempFile, DB_FILE);
+    try { fs.chmodSync(DB_FILE, 0o600); } catch (_) {}
+
+    // 4. Update last good copy
+    try {
+      fs.writeFileSync(LAST_GOOD_FILE, jsonString, { encoding: 'utf-8' });
+    } catch (_) {}
+  }
+
+  // Reads the fresh authoritative state from disk. Multi-instance safe.
+  public getAuthoritativeData(): DatabaseSchema {
+    if (isProduction || remotePersistenceConfigured) {
+      if (!remotePersistenceConfigured) {
+        throw new Error(
+          '[DB FATAL] Production database cannot fall back to local disk. STB_DATABASE_URL is required.'
+        );
+      }
+      try {
+        const remote = remoteGetState();
+        if (!remote) throw new Error('Hosted database row is missing in Neon. Refusing to fall back to an empty database.');
+        this.remoteVersion = Number(remote.version);
+        this.cachedData = this.validateAndMigrate(remote.state);
+        return this.cachedData;
+      } catch (err) {
+        console.error('[DB] Hosted database read failed:', err);
+        throw err;
+      }
+    }
+
+    try {
+      if (fs.existsSync(DB_FILE)) {
+        const stat = fs.statSync(DB_FILE);
+        if (this.cachedData && stat.mtimeMs === this.lastMtimeMs) {
+          return this.cachedData;
+        }
+
+        const raw = fs.readFileSync(DB_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        this.cachedData = this.validateAndMigrate(parsed);
+        this.lastMtimeMs = stat.mtimeMs;
+        return this.cachedData;
+      }
+    } catch (err) {
+      console.error('[DB] Error reading authoritative database from disk:', err);
+      if (this.cachedData) return this.cachedData;
+      const rec = this.tryRecover();
+      if (rec) {
+        this.cachedData = rec;
+        return rec;
+      }
+    }
+    throw new Error('Database is unavailable. Refusing to silently create an empty database.');
+  }
+
+  // Mutates the authoritative database under exclusive file lock and read-before-write
+  public mutate<T>(mutator: (data: DatabaseSchema) => T): T {
+    if (isProduction || remotePersistenceConfigured) {
+      if (!remotePersistenceConfigured) {
+        throw new Error(
+          '[DB FATAL] Production database cannot fall back to local disk. STB_DATABASE_URL is required.'
+        );
+      }
+      // Optimistic concurrency with a database-side compare-and-swap function.
+      // This prevents two Cloud Run instances from overwriting each other's registrations.
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const remote = remoteGetState();
+        if (!remote) throw new Error('Hosted database row is missing in Neon. Refusing to overwrite it with a clean seed.');
+        const current = this.validateAndMigrate(remote.state);
+        const result = mutator(current);
+        const validated = this.validateAndMigrate(current);
+        const saved = remoteUpdateState(Number(remote.version), validated);
+        if (saved) {
+          this.remoteVersion = Number(saved.version);
+          this.cachedData = validated;
+          return result;
+        }
+      }
+      throw new Error('Hosted database was modified concurrently too many times. Please retry the operation.');
+    }
+
+    return withFileLock(() => {
+      // 1. Read fresh from disk to eliminate any stale in-memory state
+      let current: DatabaseSchema;
+      try {
+        if (fs.existsSync(DB_FILE)) {
+          const raw = fs.readFileSync(DB_FILE, 'utf-8');
+          current = this.validateAndMigrate(JSON.parse(raw));
+        } else {
+          current = JSON.parse(JSON.stringify(INITIAL_DB));
+        }
+      } catch (readErr) {
+        console.error('[DB] Error during read-before-write, attempting recovery:', readErr);
+        const rec = this.tryRecover();
+        if (!rec) throw new Error('Database read-before-write failure: file corrupt and no backup found.');
+        current = rec;
+      }
+
+      // 2. Execute mutation
+      const result = mutator(current);
+
+      // 3. Validate mutated result
+      const validated = this.validateAndMigrate(current);
+
+      // 4. Atomically persist to disk with rolling backup
+      this.atomicWrite(validated, true);
+
+      // 5. Update cached state
+      this.cachedData = validated;
+      try {
+        this.lastMtimeMs = fs.statSync(DB_FILE).mtimeMs;
+      } catch (_) {}
+
+      return result;
+    });
+  }
+
+  // ====================================================
+  // USER / CLIENT OPERATIONS
+  // ====================================================
+  getUsers(): User[] {
+    const data = this.getAuthoritativeData();
+    return data.users.map(u => {
+      if (DESIGNATED_ADMIN_EMAILS.includes(u.email.toLowerCase())) {
+        return { ...u, role: 'admin', status: 'active' };
+      }
+      return { ...u };
+    });
+  }
+
+  getEmailCampaigns(): EmailCampaign[] {
+    return this.getAuthoritativeData().emailCampaigns || [];
+  }
+
+  createEmailCampaign(campaign: EmailCampaign): EmailCampaign {
+    return this.mutate((data) => {
+      data.emailCampaigns ||= [];
+      const alreadyAttempted = new Set<string>();
+      for (const previous of data.emailCampaigns) {
+        if (previous.fingerprint !== campaign.fingerprint) continue;
+        for (const recipient of previous.recipients || []) {
+          alreadyAttempted.add(recipient.userId);
+        }
+      }
+      const duplicates = campaign.recipients.filter(r => alreadyAttempted.has(r.userId));
+      if (duplicates.length) {
+        throw new Error(`This announcement was already attempted for ${duplicates.length} selected client(s). Remove those clients to avoid duplicate delivery.`);
+      }
+      data.emailCampaigns.unshift(campaign);
+      return campaign;
+    });
+  }
+
+  updateEmailCampaign(id: string, updates: Partial<EmailCampaign>): EmailCampaign | undefined {
+    return this.mutate((data) => {
+      data.emailCampaigns ||= [];
+      const index = data.emailCampaigns.findIndex(c => c.id === id);
+      if (index < 0) return undefined;
+      data.emailCampaigns[index] = { ...data.emailCampaigns[index], ...updates };
+      return data.emailCampaigns[index];
+    });
+  }
+
+  findUserById(id: string): User | undefined {
+    const data = this.getAuthoritativeData();
+    const user = data.users.find(u => u.id === id);
+    if (!user) return undefined;
+    if (DESIGNATED_ADMIN_EMAILS.includes(user.email.toLowerCase())) {
+      return { ...user, role: 'admin', status: 'active', ...(isSuperAdminEmail(user.email) ? { isPlatformOwner: true } : {}) };
+    }
+    if (user.role === 'admin') return { ...user, role: 'client' };
+    return { ...user };
+  }
+
+  findUserByEmail(email: string): User | undefined {
+    const data = this.getAuthoritativeData();
+    const norm = email.trim().toLowerCase();
+    const user = data.users.find(u => u.email.toLowerCase() === norm);
+    if (!user) return undefined;
+    if (DESIGNATED_ADMIN_EMAILS.includes(user.email.toLowerCase())) {
+      return { ...user, role: 'admin', status: 'active', ...(isSuperAdminEmail(user.email) ? { isPlatformOwner: true } : {}) };
+    }
+    if (user.role === 'admin') return { ...user, role: 'client' };
+    return { ...user };
+  }
+
+  findUserByInviteToken(token: string): User | undefined {
+    const data = this.getAuthoritativeData();
+    return data.users.find(u => u.inviteToken === token);
+  }
+
+  findUserByResetToken(token: string): User | undefined {
+    const data = this.getAuthoritativeData();
+    return data.users.find(u => u.resetToken === token && (!u.resetTokenExpiry || new Date(u.resetTokenExpiry) > new Date()));
+  }
+
+  createUser(user: User): User {
+    return this.mutate((data) => {
+      // Never allow creating a non-designated administrator
+      if (!DESIGNATED_ADMIN_EMAILS.includes(user.email.toLowerCase()) && user.role === 'admin') {
+        user.role = 'client';
+      }
+      // Check for duplicate email
+      const existing = data.users.find(u => u.email.toLowerCase() === user.email.toLowerCase());
+      if (existing) {
+        throw new Error(`A client or user with email "${user.email}" already exists.`);
+      }
+      data.users.push(user);
+      return user;
+    });
+  }
+
+  updateUser(id: string, updates: Partial<User>): User | undefined {
+    return this.mutate((data) => {
+      const idx = data.users.findIndex(u => u.id === id);
+      if (idx === -1) return undefined;
+      const existing = data.users[idx];
+
+      // Prevent demoting or deactivating designated administrators
+      if (DESIGNATED_ADMIN_EMAILS.includes(existing.email.toLowerCase())) {
+        delete updates.role;
+        delete updates.status;
+      }
+
+      data.users[idx] = { ...existing, ...updates };
+      return data.users[idx];
+    });
+  }
+
+  // Merge artist records atomically inside the authoritative state mutation so concurrent
+  // requests or multiple Render instances cannot overwrite one another's newly saved artists.
+  upsertUserArtists(id: string, incoming: Array<Partial<ArtistCredit> & { name?: string }>): ArtistCredit[] {
+    return this.mutate((data) => {
+      const user = data.users.find(item => item.id === id);
+      if (!user || user.role !== 'client') return [];
+      const library: ArtistCredit[] = Array.isArray(user.artistLibrary) ? [...user.artistLibrary] : [];
+      for (const raw of incoming) {
+        const name = String(raw?.name || '').trim().replace(/\s+/g, ' ').slice(0, 180);
+        if (!name) continue;
+        const normalized = name.normalize('NFKC').toLocaleLowerCase('en-US');
+        const index = library.findIndex(item => String(item.name || '').normalize('NFKC').toLocaleLowerCase('en-US') === normalized);
+        const existing = index >= 0 ? library[index] : undefined;
+        const saved: ArtistCredit = {
+          ...(existing || {}),
+          id: existing?.id || String(raw.id || `artist_${crypto.randomUUID()}`),
+          name,
+          role: raw.role === 'featured' ? 'featured' : raw.role === 'primary' ? 'primary' : existing?.role,
+          spotifyProfileUrl: raw.spotifyProfileUrl !== undefined ? String(raw.spotifyProfileUrl || '').trim().slice(0, 500) || undefined : existing?.spotifyProfileUrl,
+          appleMusicProfileUrl: raw.appleMusicProfileUrl !== undefined ? String(raw.appleMusicProfileUrl || '').trim().slice(0, 500) || undefined : existing?.appleMusicProfileUrl,
+          spotifyProfileCreateRequested: raw.spotifyProfileCreateRequested !== undefined ? !!raw.spotifyProfileCreateRequested : existing?.spotifyProfileCreateRequested,
+          appleMusicProfileCreateRequested: raw.appleMusicProfileCreateRequested !== undefined ? !!raw.appleMusicProfileCreateRequested : existing?.appleMusicProfileCreateRequested,
+          socialMediaLinks: Array.isArray(raw.socialMediaLinks)
+            ? raw.socialMediaLinks.map(value => String(value || '').trim()).filter(Boolean).slice(0, 10)
+            : existing?.socialMediaLinks,
+        };
+        if (index >= 0) library[index] = saved;
+        else library.push(saved);
+      }
+      user.artistLibrary = library;
+      return library;
+    });
+  }
+
+  deleteUser(id: string): boolean {
+    return this.mutate((data) => {
+      const target = data.users.find(u => u.id === id);
+      if (target && DESIGNATED_ADMIN_EMAILS.includes(target.email.toLowerCase())) {
+        return false; // Cannot delete designated administrators
+      }
+      const prevLen = data.users.length;
+      data.users = data.users.filter(u => u.id !== id);
+      if (data.users.length !== prevLen) {
+        const ownedReleaseIds = data.releases.filter(r=>r.userId===id).map(r=>r.id);
+        data.releases = data.releases.filter(r => r.userId !== id);
+        data.takedownRequests = (data.takedownRequests || []).filter(t => !ownedReleaseIds.includes(t.releaseId));
+        data.presavePages = (data.presavePages || []).filter(page => !ownedReleaseIds.includes(page.releaseId));
+        data.videoSubmissions = (data.videoSubmissions || []).filter(v => v.userId !== id);
+        data.withdrawals = (data.withdrawals || []).filter(w => w.userId !== id);
+        data.supportMessages = (data.supportMessages || []).filter(m => m.userId !== id);
+        data.notifications = (data.notifications || []).filter(n => n.recipientEmail !== target?.email);
+        return true;
+      }
+      return false;
+    });
+  }
+
+  // ====================================================
+  // RELEASE OPERATIONS
+  // ====================================================
+  getReleases(): Release[] {
+    return this.getAuthoritativeData().releases;
+  }
+
+  getReleasesByUserId(userId: string): Release[] {
+    return this.getAuthoritativeData().releases.filter(r => r.userId === userId);
+  }
+
+  findReleaseById(id: string): Release | undefined {
+    return this.getAuthoritativeData().releases.find(r => r.id === id);
+  }
+
+  findReleaseByRef(refNumber: string): Release | undefined {
+    const norm = refNumber.trim().toUpperCase();
+    return this.getAuthoritativeData().releases.find(r => r.refNumber.toUpperCase() === norm);
+  }
+
+  createRelease(release: Release): Release {
+    return this.mutate((data) => {
+      // Prepend release to maintain chronological descending order
+      data.releases.unshift(release);
+      return release;
+    });
+  }
+
+  updateRelease(id: string, updates: Partial<Release>): Release | undefined {
+    return this.mutate((data) => {
+      const idx = data.releases.findIndex(r => r.id === id);
+      if (idx === -1) return undefined;
+      data.releases[idx] = {
+        ...data.releases[idx],
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+      return data.releases[idx];
+    });
+  }
+
+  deleteRelease(id: string): boolean {
+    return this.mutate((data) => {
+      const initialLen = data.releases.length;
+      data.releases = data.releases.filter(r => r.id !== id);
+      data.takedownRequests = (data.takedownRequests || []).filter(t => t.releaseId !== id);
+      data.presavePages = (data.presavePages || []).filter(page => page.releaseId !== id);
+      data.catalogue = (data.catalogue || []).filter(entry => entry.releaseId !== id);
+      return data.releases.length !== initialLen;
+    });
+  }
+
+  // ====================================================
+  // ROYALTY / WITHDRAWAL OPERATIONS
+  // ====================================================
+  getWithdrawals(): WithdrawalRequest[] {
+    return this.getAuthoritativeData().withdrawals || [];
+  }
+
+  getWithdrawalsByUserId(userId: string): WithdrawalRequest[] {
+    return this.getWithdrawals().filter(w => w.userId === userId);
+  }
+
+  createWithdrawal(withdrawal: WithdrawalRequest): WithdrawalRequest {
+    return this.mutate((data) => {
+      data.withdrawals = Array.isArray(data.withdrawals) ? data.withdrawals : [];
+      const owner = data.users.find(u => u.id === withdrawal.userId);
+      const releaseEarnings = owner?.role === 'admin'
+        ? Math.max(0, Number(owner.adminRoyaltyAllocation || 0))
+        : data.releases.filter(r => r.userId === withdrawal.userId && ['Delivered','In Distribution','Completed'].includes(r.status))
+            .reduce((sum, r) => sum + Math.max(0, Number(r.royaltyAmount || 0)), 0);
+      // Standalone legacy catalogue entries contribute royalties too. Linked entries
+      // are excluded here because their release royalty is already counted above.
+      const catalogueEarnings = owner?.role === 'admin' ? 0 : (data.catalogue || [])
+        .filter(entry => entry.userId === withdrawal.userId && !entry.releaseId)
+        .reduce((sum, entry) => sum + Math.max(0, Number(entry.royaltyAmount || 0)), 0);
+      const videoEarnings = owner?.role === 'admin' ? 0 : (data.videoSubmissions || [])
+        .filter(video => video.userId === withdrawal.userId && ['Delivered','In Distribution'].includes(video.status))
+        .reduce((sum, video) => sum + Math.max(0, Number(video.royaltyAmount || 0)), 0);
+      const totalEarnings = releaseEarnings + catalogueEarnings + videoEarnings;
+      const reserved = data.withdrawals
+        .filter(w => w.userId === withdrawal.userId && w.status === 'pending')
+        .reduce((sum, w) => sum + Number(w.amount || 0), 0);
+      const paid = data.withdrawals
+        .filter(w => w.userId === withdrawal.userId && w.status === 'paid')
+        .reduce((sum, w) => sum + Number(w.amount || 0), 0);
+      const available = Math.max(0, totalEarnings - reserved - paid);
+      if (withdrawal.amount > available + 0.000001) {
+        throw new Error(`The maximum available amount is R${available.toFixed(2)}.`);
+      }
+      data.withdrawals.unshift(withdrawal);
+      return withdrawal;
+    });
+  }
+
+  updateWithdrawal(id: string, updates: Partial<WithdrawalRequest>): WithdrawalRequest | undefined {
+    return this.mutate((data) => {
+      const idx = (data.withdrawals || []).findIndex(w => w.id === id);
+      if (idx === -1) return undefined;
+      data.withdrawals[idx] = { ...data.withdrawals[idx], ...updates };
+      return data.withdrawals[idx];
+    });
+  }
+
+  getSupportMessages(userId?: string): SupportMessage[] {
+    const messages = this.getAuthoritativeData().supportMessages || [];
+    return userId ? messages.filter(m => m.userId === userId) : messages;
+  }
+
+  addSupportMessage(message: SupportMessage): SupportMessage {
+    return this.mutate(data => {
+      data.supportMessages ||= [];
+      data.supportMessages.push(message);
+      return message;
+    });
+  }
+
+  // ====================================================
+  // ENQUIRY OPERATIONS
+  // ====================================================
+  getEnquiries(): Enquiry[] {
+    return this.getAuthoritativeData().enquiries;
+  }
+
+  createEnquiry(enquiry: Enquiry): Enquiry {
+    return this.mutate((data) => {
+      data.enquiries.unshift(enquiry);
+      return enquiry;
+    });
+  }
+
+  updateEnquiryStatus(id: string, status: 'new' | 'read' | 'replied'): Enquiry | undefined {
+    return this.mutate((data) => {
+      const enq = data.enquiries.find(e => e.id === id);
+      if (enq) {
+        enq.status = status;
+        return enq;
+      }
+      return undefined;
+    });
+  }
+
+  // ====================================================
+  // NOTIFICATION OPERATIONS
+  // ====================================================
+  getNotifications(): NotificationLog[] {
+    return this.getAuthoritativeData().notifications;
+  }
+
+  createNotification(notif: NotificationLog): NotificationLog {
+    return this.mutate((data) => {
+      data.notifications.unshift(notif);
+      return notif;
+    });
+  }
+
+  // ====================================================
+  // CATALOGUE OPERATIONS
+  // ====================================================
+  getCatalogue(): CatalogueEntry[] {
+    return this.getAuthoritativeData().catalogue;
+  }
+
+  getCatalogueByUserId(userId: string): CatalogueEntry[] {
+    return this.getAuthoritativeData().catalogue.filter(entry => entry.userId === userId);
+  }
+
+  findCatalogueEntry(releaseId: string, userId: string): CatalogueEntry | undefined {
+    return this.getAuthoritativeData().catalogue.find(entry => entry.releaseId === releaseId && entry.userId === userId);
+  }
+
+  findCatalogueById(id: string): CatalogueEntry | undefined {
+    return this.getAuthoritativeData().catalogue.find(entry => entry.id === id);
+  }
+
+  addCatalogueEntry(entry: CatalogueEntry): CatalogueEntry {
+    return this.mutate((data) => {
+      if (entry.releaseId && data.catalogue.some(e => e.releaseId === entry.releaseId && e.userId === entry.userId)) {
+        throw new Error('This release is already in the client catalogue.');
+      }
+      data.catalogue.push(entry);
+      return entry;
+    });
+  }
+
+  updateCatalogueEntry(id: string, updates: Partial<CatalogueEntry>): CatalogueEntry | undefined {
+    return this.mutate((data) => {
+      const idx = data.catalogue.findIndex(entry => entry.id === id);
+      if (idx === -1) return undefined;
+      data.catalogue[idx] = {
+        ...data.catalogue[idx],
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+      return data.catalogue[idx];
+    });
+  }
+
+  // ====================================================
+  // PERSISTENCE AUDIT & SNAPSHOT OPERATIONS
+  // ====================================================
+  getPersistenceInfo() {
+    if (remotePersistenceConfigured) {
+      const data = this.getAuthoritativeData();
+      return {
+        persistenceMode: 'neon-postgres',
+        neonConfigured: true,
+        databaseConfigured: true,
+        storageConfigured: remoteStorageConfigured,
+        authConfigured: remoteCheckAuth(),
+        mode: 'neon-postgres',
+        databaseFile: 'hosted:stb_academy_app_state',
+        dataDirectory: 'hosted',
+        backupsDirectory: 'hosted database backups / provider backups',
+        exists: true,
+        size: JSON.stringify(data).length,
+        modifiedAt: new Date().toISOString(),
+        backupsCount: -1,
+        persistentDirectoryConfigured: true,
+        users: data.users.length,
+        clients: data.users.filter(u => u.role === 'client').length,
+        releases: data.releases.length,
+        catalogue: data.catalogue.length,
+        enquiries: data.enquiries.length,
+        notifications: data.notifications.length,
+        remoteVersion: this.remoteVersion,
+      };
+    }
+
+    let size = 0;
+    let modifiedAt: string | null = null;
+    try {
+      const stat = fs.statSync(DB_FILE);
+      size = stat.size;
+      modifiedAt = stat.mtime.toISOString();
+    } catch (_) {}
+
+    const data = this.getAuthoritativeData();
+    let backupsCount = 0;
+    try {
+      if (fs.existsSync(BACKUPS_DIR)) {
+        backupsCount = fs.readdirSync(BACKUPS_DIR).filter(f => f.endsWith('.json')).length;
+      }
+    } catch (_) {}
+
+    return {
+      persistenceMode: 'local-json',
+      neonConfigured: false,
+      databaseConfigured: false,
+      storageConfigured: false,
+      authConfigured: false,
+      mode: 'local-json',
+      databaseFile: DB_FILE,
+      dataDirectory: DATA_DIR,
+      backupsDirectory: BACKUPS_DIR,
+      exists: fs.existsSync(DB_FILE),
+      size,
+      modifiedAt,
+      backupsCount,
+      persistentDirectoryConfigured: Boolean(process.env.STB_DATA_DIR || process.env.STB_DB_FILE),
+      users: data.users.length,
+      clients: data.users.filter(u => u.role === 'client').length,
+      releases: data.releases.length,
+      catalogue: data.catalogue.length,
+      enquiries: data.enquiries.length,
+      notifications: data.notifications.length,
+    };
+  }
+
+  getSnapshot(): DatabaseSchema {
+    return JSON.parse(JSON.stringify(this.getAuthoritativeData()));
+  }
+
+  importAdditive(snapshot: Partial<DatabaseSchema>): {
+    usersAdded: number;
+    releasesAdded: number;
+    enquiriesAdded: number;
+    notificationsAdded: number;
+    catalogueAdded: number;
+  } {
+    return this.mutate((data) => {
+      const result = { usersAdded: 0, releasesAdded: 0, enquiriesAdded: 0, notificationsAdded: 0, catalogueAdded: 0 };
+      const addUnique = <T extends { id: string }>(target: T[], incoming: unknown, counter: keyof typeof result) => {
+        if (!Array.isArray(incoming)) return;
+        for (const item of incoming as T[]) {
+          if (!item || typeof item.id !== 'string') continue;
+          if (!target.some(existing => existing.id === item.id)) {
+            target.push(item);
+            result[counter]++;
+          }
+        }
+      };
+
+      addUnique(data.users, snapshot.users, 'usersAdded');
+      addUnique(data.releases, snapshot.releases, 'releasesAdded');
+      addUnique(data.enquiries, snapshot.enquiries, 'enquiriesAdded');
+      addUnique(data.notifications, snapshot.notifications, 'notificationsAdded');
+      addUnique(data.catalogue, snapshot.catalogue, 'catalogueAdded');
+      if (Array.isArray(snapshot.presavePages)) {
+        for (const page of snapshot.presavePages) if (page?.id && !data.presavePages.some(p => p.id === page.id)) data.presavePages.push(page);
+      }
+      return result;
+    });
+  }
+
+  getPreSavePages(): SmartPreSavePage[] { return this.getAuthoritativeData().presavePages || []; }
+  findPreSavePageBySlug(slug: string): SmartPreSavePage | undefined { return this.getPreSavePages().find(p => p.slug.toLowerCase() === slug.toLowerCase()); }
+  createPreSavePage(page: SmartPreSavePage): SmartPreSavePage { return this.mutate(data => { if (!Array.isArray(data.presavePages)) data.presavePages = []; if (data.presavePages.some(p => p.slug.toLowerCase() === page.slug.toLowerCase())) throw new Error('That pre-save URL is already in use.'); data.presavePages.unshift(page); return page; }); }
+  updatePreSavePage(id: string, updates: Partial<SmartPreSavePage>): SmartPreSavePage | undefined { return this.mutate(data => { const page = (data.presavePages || []).find(p => p.id === id); if (!page) return undefined; Object.assign(page, updates); return page; }); }
+  deletePreSavePage(id: string): boolean { return this.mutate(data => { const before = (data.presavePages || []).length; data.presavePages = (data.presavePages || []).filter(p => p.id !== id); return data.presavePages.length !== before; }); }
+
+  getVevoApplications(): VevoApplication[] { return this.getAuthoritativeData().vevoApplications || []; }
+  getVevoApplicationsForUser(userId: string): VevoApplication[] { return this.getVevoApplications().filter(a => a.userId === userId); }
+  createVevoApplication(application: VevoApplication): VevoApplication {
+    return this.mutate(data => { if (!Array.isArray(data.vevoApplications)) data.vevoApplications = []; data.vevoApplications.unshift(application); return application; });
+  }
+  updateVevoApplication(id: string, updates: Partial<VevoApplication>): VevoApplication | undefined {
+    return this.mutate(data => { const item = (data.vevoApplications || []).find(a => a.id === id); if (!item) return undefined; Object.assign(item, updates); return item; });
+  }
+  getVideoSubmissions(): VideoSubmission[] { return this.getAuthoritativeData().videoSubmissions || []; }
+  getVideoSubmissionsForUser(userId: string): VideoSubmission[] { return this.getVideoSubmissions().filter(v => v.userId === userId); }
+  createVideoSubmission(item: VideoSubmission): VideoSubmission { return this.mutate(data => { if (!Array.isArray(data.videoSubmissions)) data.videoSubmissions = []; data.videoSubmissions.unshift(item); return item; }); }
+  updateVideoSubmission(id: string, updates: Partial<VideoSubmission>): VideoSubmission | undefined { return this.mutate(data => { const item = (data.videoSubmissions || []).find(v => v.id === id); if (!item) return undefined; Object.assign(item, updates); return item; }); }
+  deleteVideoSubmission(id: string): boolean { return this.mutate(data => { const before = (data.videoSubmissions || []).length; data.videoSubmissions = (data.videoSubmissions || []).filter(v => v.id !== id); return (data.videoSubmissions || []).length !== before; }); }
+
+  // Explicit safety block: destructive reset must NEVER be callable
+  resetToClean() {
+    throw new Error('Destructive database reset is strictly disabled for data protection. Restore from an explicit backup instead.');
+  }
+}
+
+export const db = new Database();
+
+// Helper to enforce private file storage and role/ownership access control
+export function canAccessUploadedFile(filename: string, user?: User | null): boolean {
+  if (user && user.role === 'admin') return true;
+
+  const base = path.basename(filename);
+  const release = db.getReleases().find(r => {
+    if (r.storedArtworkFilename === base || path.basename(r.artworkUrl) === base) return true;
+    if (r.tracks.some(t => t.storedFilename === base || path.basename(t.fileUrl) === base)) return true;
+    if (r.documents?.some(d => d.storedFilename === base || path.basename(d.fileUrl) === base)) return true;
+    return false;
+  });
+
+  if (release) {
+    if (user && release.userId === user.id) return true;
+    if (release.allowPublicShare && release.status !== 'Denied') return true;
+    return false;
+  }
+
+  const catalogue = db.getCatalogue().find(entry => {
+    if (entry.storedArtworkFilename === base || (entry.artworkUrl && path.basename(entry.artworkUrl) === base)) return true;
+    if (entry.tracks?.some(t => t.storedFilename === base || path.basename(t.fileUrl) === base)) return true;
+    if (entry.documents?.some(d => d.storedFilename === base || path.basename(d.fileUrl) === base)) return true;
+    return false;
+  });
+  if (catalogue) return !!user && (user.role === 'admin' || catalogue.userId === user.id);
+
+  const videoSubmission = db.getVideoSubmissions().find(v => v.storedVideoFilename === base || path.basename(v.videoUrl) === base);
+  if (videoSubmission) return !!user && (user.role === 'admin' || videoSubmission.userId === user.id);
+
+  // Authenticated user can access freshly uploaded asset before form submit
+  return !!user;
+}

@@ -1,0 +1,20 @@
+import React,{useEffect,useMemo,useState} from 'react';
+import {MessageCircle,Send,RefreshCw} from 'lucide-react';
+import {api} from '../../services/api';
+
+type Message={id:string;userId:string;userName:string;userEmail:string;senderRole:'client'|'admin';senderEmail:string;message:string;createdAt:string};
+type Thread={userId:string;userName:string;userEmail:string;messages:Message[]};
+
+export const SupportChat:React.FC<{admin?:boolean}> = ({admin=false})=>{
+ const [threads,setThreads]=useState<Thread[]>([]);const [clientMessages,setClientMessages]=useState<Message[]>([]);const [selectedUserId,setSelectedUserId]=useState('');const [draft,setDraft]=useState('');const [busy,setBusy]=useState(false);const [error,setError]=useState('');
+ const load=async()=>{try{setError('');if(admin){const r=await api.getAdminMessages();setThreads(r.threads||[]);setSelectedUserId(current=>current||r.threads?.[0]?.userId||'');}else{const r=await api.getClientMessages();setClientMessages(r.messages||[]);}}catch(e:any){setError(e.message||'Could not load messages.');}};
+ useEffect(()=>{void load();},[admin]);
+ const selected=useMemo(()=>threads.find(t=>t.userId===selectedUserId),[threads,selectedUserId]);
+ const messages=admin?(selected?.messages||[]):clientMessages;
+ const send=async(e:React.FormEvent)=>{e.preventDefault();if(!draft.trim())return;if(admin&&!selectedUserId)return;try{setBusy(true);if(admin)await api.sendAdminMessage(selectedUserId,draft.trim());else await api.sendClientMessage(draft.trim());setDraft('');await load();}catch(e:any){setError(e.message||'Could not send message.');}finally{setBusy(false);}};
+ return <section className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 sm:p-5"><div className="mb-4 flex items-center justify-between"><div><h3 className="flex items-center gap-2 text-sm font-bold text-white"><MessageCircle className="h-4 w-4 text-orange-400"/>{admin?'Client Messages':'STB Academy Support Chat'}</h3><p className="mt-1 text-[11px] text-neutral-500">{admin?'Reply to messages from registered artists.':'Send a message to the STB Academy administration team.'}</p></div><button type="button" onClick={()=>void load()} className="rounded-lg border border-neutral-700 p-2 text-neutral-300"><RefreshCw className="h-4 w-4"/></button></div>
+ {admin&&<select value={selectedUserId} onChange={e=>setSelectedUserId(e.target.value)} className="mb-3 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs text-white"><option value="">Select a client conversation</option>{threads.map(t=><option key={t.userId} value={t.userId}>{t.userName} — {t.userEmail}</option>)}</select>}
+ <div className="mb-3 h-64 space-y-2 overflow-y-auto rounded-xl border border-neutral-800 bg-neutral-950 p-3">{messages.length===0?<p className="py-10 text-center text-xs text-neutral-500">No messages yet. Start the conversation below.</p>:messages.map(m=><div key={m.id} className={`max-w-[88%] rounded-xl p-3 text-xs ${m.senderRole==='admin'?'ml-auto bg-orange-950/50 text-orange-100':'bg-neutral-800 text-neutral-100'}`}><p className="mb-1 text-[9px] font-bold uppercase tracking-wide opacity-60">{m.senderRole==='admin'?'STB Academy':m.userName} · {new Date(m.createdAt).toLocaleString()}</p><p className="whitespace-pre-wrap">{m.message}</p></div>)}</div>
+ {error&&<p className="mb-3 text-xs text-red-300">{error}</p>}<form onSubmit={send} className="flex gap-2"><textarea value={draft} onChange={e=>setDraft(e.target.value)} rows={2} maxLength={4000} placeholder="Write a message…" className="min-w-0 flex-1 resize-y rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-xs text-white"/><button disabled={busy||!draft.trim()||(admin&&!selectedUserId)} className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-40"><Send className="h-4 w-4"/>Send</button></form>
+ </section>;
+};
