@@ -1398,8 +1398,10 @@ apiRouter.post('/releases', authMiddleware, activeClientOnly, async (req: Authen
   if (invalidTrack) return res.status(400).json({ error: 'Every track must be an MP3 file uploaded through this portal.' });
   if (releaseType !== 'Single' && tracksIn.length < 2) return res.status(400).json({ error: 'An EP or Album must contain at least two tracks.' });
   if (releaseType !== 'Single') {
-    const incompleteTrack = tracksIn.find((t: any) => !String(t.title || '').trim() || !String(t.genre || '').trim() || !String(t.language || '').trim() || !String(t.countryOfRecording || '').trim() || !(Array.isArray(t.primaryArtists) && t.primaryArtists.some((name: any) => String(name || '').trim())));
-    if (incompleteTrack) return res.status(400).json({ error: 'Every EP/Album track requires its own title, primary artist, genre, song language and country of recording.' });
+    const incompleteTrack = tracksIn.find((t: any) => !String(t.title || '').trim() || !String(t.genre || '').trim() || !String(t.language || '').trim() || !String(t.countryOfRecording || '').trim() || !String(t.digitalReleaseDate || '').trim() || !(Array.isArray(t.primaryArtists) && t.primaryArtists.some((name: any) => String(name || '').trim())));
+    if (incompleteTrack) return res.status(400).json({ error: 'Every EP/Album track requires its own title, primary artist, genre, song language, country of recording and digital release date.' });
+    const missingCreditsTrack = tracksIn.find((t:any) => { const writers=Array.isArray(t.writers)?t.writers:[]; const producers=Array.isArray(t.trackProducers)?t.trackProducers:[]; return !writers.some((c:any)=>String(c?.name||'').trim()&&String(c?.role||'')==='Composer (C)') || !writers.some((c:any)=>String(c?.name||'').trim()&&String(c?.role||'')==='Author (A)') || !producers.some((c:any)=>String(c?.name||'').trim()&&String(c?.role||'')); });
+    if (missingCreditsTrack) return res.status(400).json({ error: 'Every EP/Album track requires a Writer with Composer (C), a Writer with Author (A), and at least one Producer.' });
     const previouslyReleasedTrack = tracksIn.find((t: any) => t.previouslyReleased && (!String(t.originalReleaseDate || '').trim() || !String(t.previousISRC || '').trim() || !String(t.previousUPC || '').trim()));
     if (previouslyReleasedTrack) return res.status(400).json({ error: 'Previously released tracks require their original release date, ISRC and UPC.' });
   }
@@ -1422,6 +1424,19 @@ apiRouter.post('/releases', authMiddleware, activeClientOnly, async (req: Authen
         previousISRC: String(t.previousISRC || '').trim().slice(0,40) || undefined,
         previousUPC: String(t.previousUPC || '').trim().slice(0,40) || undefined,
         previewStart: Number.isFinite(Number(t.previewStart)) ? Math.max(0, Number(t.previewStart)) : 0,
+        digitalReleaseDate: String(t.digitalReleaseDate || '').trim().slice(0,20) || undefined,
+        instrumental: !!t.instrumental, coverSong: !!t.coverSong,
+        label: String(t.label || '').trim().slice(0,180) || undefined,
+        cLine: String(t.cLine || '').trim().slice(0,180) || undefined,
+        pLine: String(t.pLine || '').trim().slice(0,180) || undefined,
+        parentalAdvisory: String(t.parentalAdvisory || (t.explicit ? 'Yes' : 'No')).slice(0,20),
+        clean: !!t.clean, requestContentId: !!t.requestContentId, publishing: !!t.publishing,
+        additionalInfo: String(t.additionalInfo || '').slice(0,250),
+        writers: Array.isArray(t.writers) ? t.writers.slice(0,50).map((c:any)=>({name:String(c?.name||'').trim().slice(0,180),role:String(c?.role||'').trim().slice(0,80)})).filter((c:any)=>c.name&&c.role) : [],
+        trackPublishers: Array.isArray(t.trackPublishers) ? t.trackPublishers.slice(0,50).map((c:any)=>({name:String(c?.name||'').trim().slice(0,180),role:String(c?.role||'').trim().slice(0,80)})).filter((c:any)=>c.name&&c.role) : [],
+        trackProducers: Array.isArray(t.trackProducers) ? t.trackProducers.slice(0,50).map((c:any)=>({name:String(c?.name||'').trim().slice(0,180),role:String(c?.role||'').trim().slice(0,80)})).filter((c:any)=>c.name&&c.role) : [],
+        additionalPerformers: Array.isArray(t.additionalPerformers) ? t.additionalPerformers.slice(0,50).map((c:any)=>({name:String(c?.name||'').trim().slice(0,180),role:String(c?.role||'').trim().slice(0,80)})).filter((c:any)=>c.name&&c.role) : [],
+        additionalContributors: Array.isArray(t.additionalContributors) ? t.additionalContributors.slice(0,50).map((c:any)=>({name:String(c?.name||'').trim().slice(0,180),role:String(c?.role||'').trim().slice(0,80)})).filter((c:any)=>c.name&&c.role) : [],
       } : {}),
     };
   });

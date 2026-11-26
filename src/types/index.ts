@@ -95,6 +95,22 @@ export interface TrackItem {
   previousISRC?: string;
   previousUPC?: string;
   previewStart?: number;
+  digitalReleaseDate?: string;
+  instrumental?: boolean;
+  coverSong?: boolean;
+  label?: string;
+  cLine?: string;
+  pLine?: string;
+  parentalAdvisory?: string;
+  clean?: boolean;
+  requestContentId?: boolean;
+  publishing?: boolean;
+  additionalInfo?: string;
+  writers?: Array<{ name: string; role: string }>;
+  trackPublishers?: Array<{ name: string; role: string }>;
+  trackProducers?: Array<{ name: string; role: string }>;
+  additionalPerformers?: Array<{ name: string; role: string }>;
+  additionalContributors?: Array<{ name: string; role: string }>;
 }
 
 export interface ReleaseDocumentItem {
