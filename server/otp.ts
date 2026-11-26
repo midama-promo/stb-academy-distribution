@@ -12,7 +12,7 @@ function hashCode(email: string, code: string): string {
   return crypto.createHmac('sha256', OTP_SECRET).update(`${email}:${code}`).digest('hex');
 }
 
-async function sendOtpEmail(email: string, code: string): Promise<void> {
+async function sendOtpEmail(email: string, code: string, firstName: string): Promise<void> {
   if (!RESEND_API_KEY || !EMAIL_FROM) throw new Error('Resend is not configured. Set RESEND_API_KEY and EMAIL_FROM.');
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -20,20 +20,25 @@ async function sendOtpEmail(email: string, code: string): Promise<void> {
     body: JSON.stringify({
       from: EMAIL_FROM,
       to: [email],
-      subject: 'Your STB Academy login code',
-      text: `Your STB Academy verification code is ${code}. It expires in 10 minutes. If you did not request this code, you can ignore this email.`,
-      html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto"><h2>STB Academy</h2><p>Your one-time verification code is:</p><p style="font-size:30px;font-weight:bold;letter-spacing:8px">${code}</p><p>This code expires in 10 minutes. If you did not request it, ignore this email.</p></div>`,
+      template: {
+        id: process.env.RESEND_OTP_TEMPLATE_ID || 'e486b12f-1f0c-4ea2-a26f-3ae46029287f',
+        variables: {
+          USER_FIRST_NAME: firstName || 'there',
+          OTP_CODE: code,
+          EXPIRY_TIME: '10 minutes',
+        },
+      },
     }),
   });
   if (!response.ok) throw new Error(`Resend email delivery failed (${response.status}): ${await response.text()}`);
 }
 
-export async function requestEmailOtp(email: string): Promise<void> {
+export async function requestEmailOtp(email: string, firstName = 'there'): Promise<void> {
   const normalized = email.trim().toLowerCase();
   const code = crypto.randomInt(0, 1000000).toString().padStart(6, '0');
   const expiresAt = new Date(Date.now() + OTP_TTL_MS);
   remoteStoreOtp(normalized, hashCode(normalized, code), expiresAt);
-  try { await sendOtpEmail(normalized, code); }
+  try { await sendOtpEmail(normalized, code, firstName.trim() || 'there'); }
   catch (error) { remoteDeleteOtp(normalized); throw error; }
 }
 

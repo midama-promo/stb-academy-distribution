@@ -34,6 +34,7 @@ import type {
 } from './db.ts';
 import { sendNotification, sendAdminReleaseEmail, sendAdminEnquiryEmail, sendAdminTakedownEmail, sendAdminVevoApplicationEmail, sendAdminVideoSubmissionEmail, sendVideoSubmissionStatusEmail, sendAnnouncementBatch } from './mailer.ts';
 import { requestEmailOtp, verifyEmailOtp } from './otp.ts';
+import { sendNewArtistWelcomeEmail } from './auth-mailer.ts';
 import {
   remotePersistenceConfigured,
   remoteStorageConfigured,
@@ -501,7 +502,7 @@ apiRouter.post('/auth/request-otp', async (req: Request, res: Response) => {
   const user = db.findUserByEmail(email);
   // Return the same response for unknown accounts to avoid account enumeration.
   if (user && user.status !== 'disabled') {
-    try { await requestEmailOtp(email); }
+    try { await requestEmailOtp(email, user.realFirstName || user.name?.split(/\s+/)[0] || 'there'); }
     catch (error: any) {
       otpRequestByKey.delete(key);
       console.error('[AUTH OTP] Resend delivery failed:', error?.message || error);
@@ -523,9 +524,9 @@ apiRouter.post('/auth/register-artist', async (req: Request, res: Response) => {
   if (!realFirstName || !realSurname || !artistName) return res.status(400).json({ error: 'Your real first name, surname and artist name are required.' });
   if (DESIGNATED_ADMIN_EMAILS.includes(email)) return res.status(409).json({ error: 'This email is reserved for STB Academy administration.' });
   if (db.findUserByEmail(email)) return res.status(409).json({ error: 'An account with this email already exists. Sign in instead.' });
-  const user: User = { id: `usr_${crypto.randomUUID()}`, email, name: `${realFirstName} ${realSurname}`, realFirstName, realSurname, artistName, role: 'client', passwordHash: hashPassword(crypto.randomBytes(32).toString('hex')), status: 'active', createdAt: new Date().toISOString(), phone, country: String(req.body?.country || 'South Africa').slice(0,80), adminRoyaltyAllocation: 0 };
+  const user: User = { id: `usr_${crypto.randomUUID()}`, email, name: `${realFirstName} ${realSurname}`, realFirstName, realSurname, artistName, role: 'client', passwordHash: hashPassword(crypto.randomBytes(32).toString('hex')), status: 'active', createdAt: new Date().toISOString(), phone, country: String(req.body?.country || 'South Africa').slice(0,80), adminRoyaltyAllocation: 0, welcomeEmailPending: true };
   db.createUser(user);
-  try { await requestEmailOtp(email); }
+  try { await requestEmailOtp(email, realFirstName); }
   catch (error:any) { db.deleteUser(user.id); console.error('[AUTH REGISTER] OTP send failed:', error?.message || error); return res.status(502).json({ error: 'Account could not be verified because the email code could not be sent. Please try again later.' }); }
   return res.status(201).json({ message: 'Artist account created. A six-digit verification code has been sent to your email.', email });
 });
@@ -556,6 +557,24 @@ apiRouter.post('/auth/verify-otp', async (req: Request, res: Response) => {
   }
   const role = DESIGNATED_ADMIN_EMAILS.includes(email) ? 'admin' : 'client';
   if (user.role !== role) db.updateUser(user.id, { role });
+
+  // Send the welcome email only after a new artist has successfully verified
+  // their email. Existing accounts do not receive repeated welcome messages.
+  if (user.welcomeEmailPending) {
+    try {
+      await sendNewArtistWelcomeEmail(
+        user.email,
+        user.realFirstName || user.name?.split(/\s+/)[0] || 'there',
+        user.id,
+      );
+      db.updateUser(user.id, { welcomeEmailPending: false });
+    } catch (error: any) {
+      // Do not block sign-in if the welcome email fails; leave the flag set
+      // so a later successful login can retry with the same idempotency key.
+      console.error('[AUTH WELCOME] Resend delivery failed:', error?.message || error);
+    }
+  }
+
   otpVerifyAttempts.delete(key);
   const token = createSessionToken(user.id);
   setSessionCookie(res, token);

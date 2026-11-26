@@ -44,6 +44,7 @@ export interface User {
   contractVersion?: string;
   adminRoyaltyAllocation?: number;
   isPlatformOwner?: boolean;
+  welcomeEmailPending?: boolean; // One-time welcome email after first successful email verification
   payoutProfile?: { provider: 'PayPal'; email?: string; mobile?: string; username?: string; paypalMeUrl?: string; linkedAt?: string };
 }
 
