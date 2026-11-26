@@ -1,6 +1,6 @@
 {
   "name": "STB Academy - Distribution",
-  "description": "Independent record label and worldwide audio and video distribution platform for artists.",
+  "description": "Free worldwide audio and music video distribution company serving independent record labels and independent artists, with no upfront or subscription fees.",
   "requestFramePermissions": [],
   "majorCapabilities": ["Audio distribution management", "Music video metadata submissions", "Artist royalty management", "Resend email OTP", "Neon PostgreSQL", "Cloudflare R2"]
 }

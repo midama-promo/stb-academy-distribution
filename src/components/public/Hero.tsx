@@ -44,12 +44,12 @@ export const Hero: React.FC<HeroProps> = ({
           <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-white font-['Space_Grotesk'] leading-[1.08]">
             A new home for{' '}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 via-orange-400 to-amber-400">
-              Independent Artists
+              Independent Artists & Labels
             </span>
           </h1>
 
           <p className="text-lg sm:text-xl text-neutral-300 max-w-2xl mx-auto font-normal leading-relaxed">
-            STB Academy - Distribution is an independent record label and distribution division built to help artists release, protect and grow their music worldwide.
+            STB Academy - Distribution is a free music distribution company serving independent record labels and independent artists. We help you deliver audio and music videos to digital platforms, manage releases and track royalties — with no upfront or subscription fees.
           </p>
 
           {/* Primary Action Buttons */}
@@ -58,7 +58,7 @@ export const Hero: React.FC<HeroProps> = ({
               onClick={onOpenSignIn}
               className="flex items-center gap-2.5 px-7 py-3.5 bg-orange-600 hover:bg-orange-500 active:scale-98 text-white font-bold text-sm sm:text-base rounded-xl shadow-lg shadow-orange-600/20 transition-all"
             >
-              <span>Artist Portal Access</span>
+              <span>Artist & Label Portal Access</span>
               <ArrowRight className="w-4 h-4 ml-1" />
             </button>
 
