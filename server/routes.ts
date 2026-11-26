@@ -841,8 +841,16 @@ ${release.tracks.map(t => `Track #${t.trackNumber}
   Version:    ${t.version || 'Original Mix'}
   Filename:   ${t.filename}
   File Size:  ${(t.fileSize / (1024 * 1024)).toFixed(2)} MB
+  Artists:    ${[...(t.primaryArtists || []), ...(t.featuredArtists || []).map((name:string)=>`feat. ${name}`)].join(', ') || release.primaryArtists.join(', ')}
+  Genre:      ${t.genre || release.genre || '—'}${t.subGenre ? ` / ${t.subGenre}` : ''}
+  Language:   ${t.language || '—'}${t.lyricsLanguage ? ` (lyrics: ${t.lyricsLanguage})` : ''}
+  Recorded:   ${t.countryOfRecording || '—'}
+  Release:    ${t.digitalReleaseDate || release.targetReleaseDate || '—'}
   Explicit:   ${t.explicit ? 'YES (Parental Advisory)' : 'NO (Clean / All Audiences)'}
   ISRC:       ${t.isrc || 'Pending DSP Distribution Code'}
+  Artists / Profiles: ${(t.artistProfiles || []).map((artist:any)=>`${artist.name} [${artist.role || 'primary'}; ${artist.spotifyProfileCreateRequested || artist.appleMusicProfileCreateRequested ? 'new profiles requested' : `Spotify ${artist.spotifyProfileUrl || '—'}, Apple Music ${artist.appleMusicProfileUrl || '—'}`}]`).join('; ') || 'No profile details'}
+  Writers:    ${(t.writers || []).map((credit:any)=>`${credit.name} (${credit.role})`).join(', ') || '—'}
+  Producers:  ${(t.trackProducers || []).map((credit:any)=>`${credit.name} (${credit.role})`).join(', ') || (t.producers || []).join(', ') || '—'}
 `).join('\n')}
 
 ADMINISTRATIVE NOTES & REVIEW:
@@ -1386,7 +1394,8 @@ apiRouter.post('/releases', authMiddleware, activeClientOnly, async (req: Authen
   const releaseDateMs = new Date(`${releaseDate}T00:00:00`).getTime();
   const minimumReleaseDate = new Date(); minimumReleaseDate.setHours(0,0,0,0); minimumReleaseDate.setDate(minimumReleaseDate.getDate() + 7);
   if (!releaseDate || !Number.isFinite(releaseDateMs) || releaseDateMs < minimumReleaseDate.getTime()) return res.status(400).json({ error: 'Choose a release date at least 7 days ahead to allow review and delivery.' });
-  const profileRows = [...(Array.isArray(body.primaryArtistProfiles) ? body.primaryArtistProfiles : []), ...(Array.isArray(body.featuredArtistProfiles) ? body.featuredArtistProfiles : [])];
+  const trackProfileRows = tracksIn.flatMap((track:any) => Array.isArray(track?.artistProfiles) ? track.artistProfiles : []);
+  const profileRows = [...(Array.isArray(body.primaryArtistProfiles) ? body.primaryArtistProfiles : []), ...(Array.isArray(body.featuredArtistProfiles) ? body.featuredArtistProfiles : []), ...trackProfileRows];
   for (const profile of profileRows) {
     const name = String(profile?.name || '').trim();
     if (!name) return res.status(400).json({ error: 'Every artist profile entry requires an artist name.' });
@@ -1415,6 +1424,7 @@ apiRouter.post('/releases', authMiddleware, activeClientOnly, async (req: Authen
       fileSize: Number(t.fileSize) || 0, explicit: releaseType === 'Single' ? !!body.explicit : !!t.explicit,
       ...(releaseType !== 'Single' ? {
         primaryArtists: cleanList(t.primaryArtists), featuredArtists: cleanList(t.featuredArtists),
+        artistProfiles: Array.isArray(t.artistProfiles) ? t.artistProfiles.slice(0,60).map((profile:any)=>({name:String(profile?.name||'').trim().slice(0,180),role:profile?.role==='featured'?'featured':'primary',spotifyProfileUrl:String(profile?.spotifyProfileUrl||'').trim().slice(0,1000)||undefined,appleMusicProfileUrl:String(profile?.appleMusicProfileUrl||'').trim().slice(0,1000)||undefined,spotifyProfileCreateRequested:!!profile?.spotifyProfileCreateRequested,appleMusicProfileCreateRequested:!!profile?.appleMusicProfileCreateRequested,socialMediaLinks:Array.isArray(profile?.socialMediaLinks)?profile.socialMediaLinks.map((x:any)=>String(x||'').trim().slice(0,1000)).filter(Boolean).slice(0,3):[]})).filter((profile:any)=>profile.name) : [],
         genre: String(t.genre || '').trim().slice(0,100), subGenre: String(t.subGenre || '').trim().slice(0,100),
         language: String(t.language || '').trim().slice(0,80), lyricsLanguage: String(t.lyricsLanguage || '').trim().slice(0,80),
         countryOfRecording: String(t.countryOfRecording || '').trim().slice(0,100),
@@ -1459,6 +1469,7 @@ apiRouter.post('/releases', authMiddleware, activeClientOnly, async (req: Authen
   const audioArtistProfiles = [
     ...(Array.isArray(body.primaryArtistProfiles) ? body.primaryArtistProfiles.map((artist: any) => ({ ...artist, role: 'primary' as const })) : []),
     ...(Array.isArray(body.featuredArtistProfiles) ? body.featuredArtistProfiles.map((artist: any) => ({ ...artist, role: 'featured' as const })) : []),
+    ...trackProfileRows.map((artist:any)=>({...artist,role:artist?.role==='featured'?'featured' as const:'primary' as const})),
     ...artistCreditsFromNames(primaryArtists, Array.isArray(body.featuredArtists) ? body.featuredArtists.map((x: any) => String(x).trim()).filter(Boolean) : []),
   ];
   upsertClientArtistLibrary(user.id, audioArtistProfiles);
