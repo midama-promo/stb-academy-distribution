@@ -658,7 +658,7 @@ class Database {
       vevoApplications,
       videoSubmissions,
       supportMessages,
-      siteSettings: { logoUrl: '', socialLinks: Array.isArray(siteSettings.socialLinks) ? siteSettings.socialLinks.filter((link:any)=>!String(link?.url||'').toLowerCase().includes('slacwave') && !String(link?.platform||'').toLowerCase().includes('slacwave')) : [] },
+      siteSettings: { logoUrl: typeof siteSettings.logoUrl === 'string' ? siteSettings.logoUrl : '', socialLinks: Array.isArray(siteSettings.socialLinks) ? siteSettings.socialLinks.filter((link:any)=>!String(link?.url||'').toLowerCase().includes('slacwave') && !String(link?.platform||'').toLowerCase().includes('slacwave')) : [] },
     };
   }
 

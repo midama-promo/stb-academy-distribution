@@ -7,8 +7,8 @@ type Thread={userId:string;userName:string;userEmail:string;messages:Message[]};
 
 export const SupportChat:React.FC<{admin?:boolean}> = ({admin=false})=>{
  const [threads,setThreads]=useState<Thread[]>([]);const [clientMessages,setClientMessages]=useState<Message[]>([]);const [selectedUserId,setSelectedUserId]=useState('');const [draft,setDraft]=useState('');const [busy,setBusy]=useState(false);const [error,setError]=useState('');
- const load=async()=>{try{setError('');if(admin){const r=await api.getAdminMessages();setThreads(r.threads||[]);setSelectedUserId(current=>current||r.threads?.[0]?.userId||'');}else{const r=await api.getClientMessages();setClientMessages(r.messages||[]);}}catch(e:any){setError(e.message||'Could not load messages.');}};
- useEffect(()=>{void load();},[admin]);
+ const load=async()=>{try{setError('');if(admin){const r=await api.getAdminMessages();setThreads((r.threads||[]).map(t=>({...t,messages:[...t.messages].sort((a,b)=>new Date(a.createdAt).getTime()-new Date(b.createdAt).getTime())})).sort((a,b)=>new Date(b.messages[b.messages.length-1]?.createdAt||0).getTime()-new Date(a.messages[a.messages.length-1]?.createdAt||0).getTime()));setSelectedUserId(current=>current||r.threads?.[0]?.userId||'');}else{const r=await api.getClientMessages();setClientMessages(r.messages||[]);}}catch(e:any){setError(e.message||'Could not load messages.');}};
+ useEffect(()=>{void load();const timer=window.setInterval(()=>{void load();},5000);return()=>window.clearInterval(timer);},[admin]);
  const selected=useMemo(()=>threads.find(t=>t.userId===selectedUserId),[threads,selectedUserId]);
  const messages=admin?(selected?.messages||[]):clientMessages;
  const send=async(e:React.FormEvent)=>{e.preventDefault();if(!draft.trim())return;if(admin&&!selectedUserId)return;try{setBusy(true);if(admin)await api.sendAdminMessage(selectedUserId,draft.trim());else await api.sendClientMessage(draft.trim());setDraft('');await load();}catch(e:any){setError(e.message||'Could not send message.');}finally{setBusy(false);}};

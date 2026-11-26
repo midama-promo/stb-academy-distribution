@@ -482,16 +482,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   });
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-20">
+    <div className={`admin-dashboard min-h-screen text-neutral-100 pb-20 ${isSuperAdmin ? 'admin-theme-super' : 'admin-theme-standard'}`}>
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             {/* Top Admin Header Bar */}
       <header className="sticky top-0 z-30 bg-neutral-950/95 backdrop-blur-md border-b border-neutral-800/80 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto flex items-center justify-between h-20">
           <div className="flex items-center gap-3">
             <Logo size="md" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />
-            <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-orange-950/60 border border-orange-800 text-orange-400 text-xs font-mono font-bold">
+            <span className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-mono font-bold ${isSuperAdmin ? 'admin-role-super' : 'admin-role-standard'}`}>
               <Shield className="w-3.5 h-3.5" />
-              <span>ADMINISTRATOR DESK</span>
+              <span>{isSuperAdmin ? 'SUPER ADMIN' : 'ADMINISTRATOR DESK'}</span>
             </span>
           </div>
 
@@ -538,7 +538,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 setIsRegisterModalOpen(true);
                 setRegSuccessResult(null);
               }}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-orange-600 hover:bg-orange-500 active:scale-95 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+              className="admin-primary-action flex items-center gap-1.5 px-3.5 py-2 bg-orange-600 hover:bg-orange-500 active:scale-95 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
             >
               <UserPlus className="w-4 h-4" />
               <span className="hidden sm:inline">Register New Client</span>
@@ -652,6 +652,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </button>
 
           <button
+            onClick={() => setActiveTab('messages')}
+            className={`pb-3 border-b-2 transition-colors flex items-center gap-2 ${
+              activeTab === 'messages' ? 'border-current text-white font-bold' : 'border-transparent text-neutral-400 hover:text-white'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span>Client Support Inbox</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('royalties')}
             className={`pb-3 border-b-2 transition-colors flex items-center gap-2 ${
               activeTab === 'royalties' ? 'border-orange-600 text-white font-bold' : 'border-transparent text-neutral-400 hover:text-white'
@@ -715,7 +725,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         )}
 
         {/* TAB: DATA BACKUP */}
-        {activeTab === 'messages' && <SupportChat admin />}
+        {activeTab === 'messages' && <div className="space-y-4"><div><h2 className="text-xl font-bold text-white">Client Support Inbox</h2><p className="mt-1 text-xs text-neutral-400">Read client conversations and reply directly from this administrator dashboard.</p></div><SupportChat admin /></div>}
 
         {activeTab === 'settings' && (
           <div className="max-w-3xl space-y-6">
