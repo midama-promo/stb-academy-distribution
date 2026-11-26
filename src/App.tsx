@@ -237,6 +237,7 @@ function MainContent() {
         {/* Navigation bar */}
         <Navbar
           onOpenSignIn={() => openAuth('signin')}
+        onOpenSignUp={() => openAuth('signup')}
           onOpenContact={() => {
             const el = document.getElementById('contact');
             if (el) el.scrollIntoView({ behavior: 'smooth' });

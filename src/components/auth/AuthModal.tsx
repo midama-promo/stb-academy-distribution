@@ -26,7 +26,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [code, setCode] = useState('');
   const [step, setStep] = useState<'email' | 'code'>('email');
   const [isSignup,setIsSignup]=useState(initialTab==='signup');
-  const [fullName,setFullName]=useState('');const [artistName,setArtistName]=useState('');const [phone,setPhone]=useState('');
+  const [realFirstName,setRealFirstName]=useState('');const [realSurname,setRealSurname]=useState('');const [artistName,setArtistName]=useState('');const [phone,setPhone]=useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
@@ -54,7 +54,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setCode('');
     setStep('email');
     setIsSignup(initialTab==='signup');
-    setFullName('');setArtistName('');setPhone('');
+    setRealFirstName('');setRealSurname('');setArtistName('');setPhone('');
     setError(null);
     setSuccessNotice(null);
   }, [isOpen, initialEmail]);
@@ -104,9 +104,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleRegisterArtist = async (e: React.FormEvent) => {
     e.preventDefault();
     const normalizedEmail=email.trim().toLowerCase();
-    if(!fullName.trim()||!artistName.trim()||!/^\S+@\S+\.\S+$/.test(normalizedEmail)){setError('Enter your full name, artist name and a valid email address.');return;}
+    if(!realFirstName.trim()||!realSurname.trim()||!artistName.trim()||!/^\S+@\S+\.\S+$/.test(normalizedEmail)){setError('Enter your real first name, surname, artist name and a valid email address.');return;}
     if(cooldown>0){setError(`Please wait ${cooldown} seconds before requesting another code.`);return;}
-    try{setIsSubmitting(true);setError(null);const result=await api.registerArtist({email:normalizedEmail,name:fullName.trim(),artistName:artistName.trim(),phone:phone.trim(),country:'South Africa'});setEmail(normalizedEmail);setStep('code');setSuccessNotice(result.message);const expiry=Date.now()+60_000;setCooldownExpiresAt(expiry);try{sessionStorage.setItem('stbacademy_otp_cooldown_expires',String(expiry));}catch{}}
+    try{setIsSubmitting(true);setError(null);const result=await api.registerArtist({email:normalizedEmail,name:`${realFirstName.trim()} ${realSurname.trim()}`,realFirstName:realFirstName.trim(),realSurname:realSurname.trim(),artistName:artistName.trim(),phone:phone.trim(),country:'South Africa'});setEmail(normalizedEmail);setStep('code');setSuccessNotice(result.message);const expiry=Date.now()+60_000;setCooldownExpiresAt(expiry);try{sessionStorage.setItem('stbacademy_otp_cooldown_expires',String(expiry));}catch{}}
     catch(err:any){setError(err.message||'Could not create your artist account.');}
     finally{setIsSubmitting(false);}
   };
@@ -149,9 +149,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         <div className="mb-6 space-y-1">
           <Logo size="sm" />
-          <h2 className="text-xl sm:text-2xl font-bold text-white font-['Space_Grotesk'] pt-2">Secure Sign In</h2>
+          <h2 className="text-xl sm:text-2xl font-bold text-white font-['Space_Grotesk'] pt-2">{isSignup ? 'Create Artist Account' : 'Secure Sign In'}</h2>
           <p className="text-xs text-neutral-400">
-            Sign in with a one-time code sent to your registered email. No password is required.
+            {isSignup ? 'Register your real name, artist name and email. We will verify your email with a one-time code.' : 'Sign in with a one-time code sent to your registered email. No password is required.'}
           </p>
         </div>
 
@@ -174,7 +174,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
         )}
 
-        {step === 'email' ? (
+        {step === 'email' && isSignup ? (
+          <form onSubmit={handleRegisterArtist} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><label className="text-xs text-neutral-300">Real first name<input required value={realFirstName} onChange={e=>setRealFirstName(e.target.value)} autoComplete="given-name" className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-3 text-sm text-white"/></label><label className="text-xs text-neutral-300">Real surname<input required value={realSurname} onChange={e=>setRealSurname(e.target.value)} autoComplete="family-name" className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-3 text-sm text-white"/></label></div>
+            <label className="block text-xs text-neutral-300">Artist name<input required value={artistName} onChange={e=>setArtistName(e.target.value)} className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-3 text-sm text-white"/></label>
+            <label className="block text-xs text-neutral-300">Email address<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email" className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-3 text-sm text-white"/></label>
+            <label className="block text-xs text-neutral-300">Mobile number (optional)<input value={phone} onChange={e=>setPhone(e.target.value)} className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-3 text-sm text-white"/></label>
+            <button type="submit" disabled={isSubmitting} className="w-full rounded-xl bg-orange-600 px-4 py-3.5 text-sm font-bold text-white disabled:opacity-50">{isSubmitting?'Creating account…':'Create account & send verification OTP'}</button>
+          </form>
+        ) : step === 'email' ? (
           <form onSubmit={handleRequestCode} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-neutral-300 mb-1.5">Email</label>

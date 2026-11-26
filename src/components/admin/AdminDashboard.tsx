@@ -483,25 +483,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-20">
-      <aside className="stb-dashboard-sidebar">
-        <div className="stb-side-brand">STB <span>ACADEMY</span></div>
-        <div className="stb-nav-label">Workspace</div>
-        <button className={activeTab==='releases'?'active':''} onClick={()=>setActiveTab('releases')}><Disc size={17}/> Overview</button>
-        <button className={activeTab==='clients'?'active':''} onClick={()=>setActiveTab('clients')}><Users size={17}/> Artists & Contributors</button>
-        <button className={activeTab==='releases'?'active':''} onClick={()=>{setActiveTab('releases');window.scrollTo({top:0,behavior:'smooth'});}}><FileCheck size={17}/> All Submissions</button>
-        <button onClick={()=>document.getElementById('stb-video-submissions')?.scrollIntoView({behavior:'smooth'})}><Disc size={17}/> Video Submissions</button>
-        <div className="stb-nav-label">Manage</div>
-        <button className={activeTab==='royalties'?'active':''} onClick={()=>setActiveTab('royalties')}><Wallet size={17}/> Earnings & Payments {isSuperAdmin&&royaltyWithdrawals.some(w=>w.status==='pending')?`(${royaltyWithdrawals.filter(w=>w.status==='pending').length})`:''}</button>
-        <button onClick={()=>{setActiveTab('releases');window.scrollTo({top:0,behavior:'smooth'});}}><Link2 size={17}/> Smart Links</button>
-        {isSuperAdmin&&<button className={activeTab==='campaigns'?'active':''} onClick={()=>setActiveTab('campaigns')}><Mail size={17}/> Campaign Emails</button>}
-        <button className={activeTab==='settings'?'active':''} onClick={()=>setActiveTab('settings')}><Sliders size={17}/> Website Branding</button>
-        <button className={activeTab==='enquiries'?'active':''} onClick={()=>setActiveTab('enquiries')}><MessageSquare size={17}/> Support Enquiries</button>
-        <button className={activeTab==='messages'?'active':''} onClick={()=>setActiveTab('messages')}><MessageSquare size={17}/> Client Messages</button>
-      </aside>
-      <div className="stb-dashboard-content">
-      <VideoSubmissions admin superAdmin={isSuperAdmin} onUpdated={submission => setVideoSubmissions(prev => prev.map(item => item.id === submission.id ? submission : item))} />
-      
-      {/* Top Admin Header Bar */}
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            {/* Top Admin Header Bar */}
       <header className="sticky top-0 z-30 bg-neutral-950/95 backdrop-blur-md border-b border-neutral-800/80 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto flex items-center justify-between h-20">
           <div className="flex items-center gap-3">
@@ -761,7 +744,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* TAB 1: RELEASES MANAGEMENT */}
         {activeTab === 'releases' && (
           <div className="space-y-6">
-            
+            <VideoSubmissions admin superAdmin={isSuperAdmin} onUpdated={submission => setVideoSubmissions(prev => prev.map(item => item.id === submission.id ? submission : item))} />
             {/* Filter controls */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="relative w-full sm:w-80">

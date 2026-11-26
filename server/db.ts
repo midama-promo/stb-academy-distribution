@@ -304,7 +304,7 @@ export interface VideoSubmission {
   id: string; userId: string; userEmail: string; clientName: string; artistName: string;
   videoTitle: string; videoType: 'Official Music Video' | 'Visualizer' | 'Lyric Video' | 'Other';
   videoUrl: string; videoFilename: string; sourceDownloadUrl?: string; storedVideoFilename?: string; fileSize: number; artworkUrl?: string; artworkFilename?: string; storedArtworkFilename?: string; royaltyAmount?: number; grossRoyaltyAmount?: number; labelShareAmount?: number; normalAdminShareAmount?: number; superAdminShareAmount?: number;
-  director?: string; description?: string; youtubeDescription?: string; lyrics?: string; primaryArtists?: string[]; featuredArtists?: string[]; language?: string; songLanguage?: string; lyricsLanguage?: string; genre?: string; subGenre?: string; version?: string; labelName?: string; publisher?: string; lyricist?: string; composer?: string; contributors?: string; dspSelections?: string[]; explicit: boolean; releaseDate?: string; notes?: string;
+  director?: string; description?: string; youtubeDescription?: string; lyrics?: string; primaryArtists?: string[]; featuredArtists?: string[]; primaryArtistProfiles?: ArtistCredit[]; featuredArtistProfiles?: ArtistCredit[]; language?: string; songLanguage?: string; lyricsLanguage?: string; genre?: string; subGenre?: string; version?: string; labelName?: string; publisher?: string; lyricist?: string; composer?: string; contributors?: string; dspSelections?: string[]; explicit: boolean; releaseDate?: string; notes?: string;
   status: 'Pending Review' | 'Approved' | 'Corrections Required' | 'Denied' | 'Rejected' | 'Delivered' | 'In Distribution';
   adminNote?: string; createdAt: string; updatedAt: string;
 }

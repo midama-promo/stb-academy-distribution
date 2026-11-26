@@ -76,7 +76,7 @@ class ApiService {
     return data as T;
   }
 
-  async registerArtist(payload: {email:string;name:string;artistName:string;phone?:string;country?:string}): Promise<{message:string;email:string}> {
+  async registerArtist(payload: {email:string;name:string;realFirstName?:string;realSurname?:string;artistName:string;phone?:string;country?:string}): Promise<{message:string;email:string}> {
     return this.request('/api/auth/register-artist', { method:'POST', body:JSON.stringify(payload) });
   }
   async deleteAccount(): Promise<{success:boolean;message:string}> { return this.request('/api/account', { method:'DELETE' }); }

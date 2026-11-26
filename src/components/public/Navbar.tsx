@@ -5,6 +5,7 @@ import { LogIn, Menu, X, Shield, Bell, Disc3 } from 'lucide-react';
 
 interface NavbarProps {
   onOpenSignIn: () => void;
+  onOpenSignUp: () => void;
   onOpenContact: () => void;
   onGoToDashboard: () => void;
   onOpenNotifications?: () => void;
@@ -12,6 +13,7 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({
   onOpenSignIn,
+  onOpenSignUp,
   onOpenContact,
   onGoToDashboard,
   onOpenNotifications,
@@ -127,13 +129,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             ) : (
               <>
-                <button
-                  onClick={onOpenSignIn}
-                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-neutral-300 hover:text-white transition-colors"
-                >
-                  <LogIn className="w-4 h-4 text-neutral-400" />
-                  <span>Sign In</span>
-                </button>
+                <button onClick={onOpenSignIn} className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-neutral-300 hover:text-white transition-colors"><LogIn className="w-4 h-4 text-neutral-400"/><span>Sign In</span></button>
+                <button onClick={onOpenSignUp} className="rounded-lg bg-orange-600 px-4 py-2.5 text-xs font-extrabold text-white hover:bg-orange-500">Sign Up</button>
               </>
             )}
           </div>
@@ -214,16 +211,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               </>
             ) : (
               <>
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    onOpenSignIn();
-                  }}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-neutral-900 border border-neutral-800 text-white rounded-lg text-sm font-semibold"
-                >
-                  <LogIn className="w-4 h-4" />
-                  Sign In
-                </button>
+                <button onClick={() => { setMobileMenuOpen(false); onOpenSignIn(); }} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-neutral-900 border border-neutral-800 text-white rounded-lg text-sm font-semibold"><LogIn className="w-4 h-4"/>Sign In</button>
+                <button onClick={() => { setMobileMenuOpen(false); onOpenSignUp(); }} className="w-full rounded-lg bg-orange-600 px-4 py-2.5 text-sm font-extrabold text-white">Create Artist Account</button>
               </>
             )}
           </div>

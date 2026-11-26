@@ -230,8 +230,7 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
 
   return (
     <div className={`min-h-screen text-neutral-100 pb-20 transition-colors duration-500 bg-[radial-gradient(ellipse_at_top,_rgba(249,115,22,0.10),_transparent_45%),#08080d]`}>
-      <aside className="stb-dashboard-sidebar"><div className="stb-side-brand">STB <span>ACADEMY</span></div><div className="stb-nav-label">My Workspace</div><button onClick={()=>window.scrollTo({top:0,behavior:'smooth'})}><Eye size={17}/> Overview</button><button onClick={()=>document.getElementById('stb-audio-submissions')?.scrollIntoView({behavior:'smooth'})}><Music size={17}/> Submit Audio</button><button onClick={()=>document.getElementById('stb-video-submissions')?.scrollIntoView({behavior:'smooth'})}><Disc size={17}/> Submit Video</button><button onClick={()=>document.getElementById('stb-royalty-section')?.scrollIntoView({behavior:'smooth'})}><Wallet size={17}/> Request Payment</button><button onClick={()=>document.getElementById('stb-release-list')?.scrollIntoView({behavior:'smooth'})}><Link2 size={17}/> Smart Links</button></aside>
-      <div className="stb-dashboard-content">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       {/* Admin Impersonation Notice Bar */}
       {isImpersonating && (
         <div className="bg-amber-400 text-neutral-950 px-4 py-2.5 text-xs font-bold flex items-center justify-between shadow-lg sticky top-0 z-40 border-b border-amber-500">

@@ -1,4 +1,4 @@
-import { db } from './db.ts';
+import { db, SUPER_ADMIN_EMAIL } from './db.ts';
 import type { NotificationLog, Release } from './db.ts';
 
 export interface AnnouncementEmailTarget {
@@ -17,10 +17,9 @@ export interface AnnouncementEmailResult {
 
 const ANNOUNCEMENT_EMAIL_FROM = process.env.EMAIL_FROM || 'STB Academy - Distribution <no-reply@YOUR-VERIFIED-DOMAIN>'; // Same verified sender configuration as OTP
 
-// Render ADMIN_NOTIFICATION_EMAIL accepts a comma-separated list of addresses.
-// Both designated admins receive notifications by default if the variable is unset.
-export const ADMIN_NOTIFICATION_EMAILS = (process.env.ADMIN_NOTIFICATION_EMAIL || 'mxldiroba@gmail.com,external.usage8@yahoo.com,remoabetswemolefi@gmail.com')
-  .split(',').map(email => email.trim()).filter(Boolean);
+// Operational alerts are private to the super admin. Normal admins review releases
+// in the dashboard but must never receive platform/admin notification emails.
+export const ADMIN_NOTIFICATION_EMAILS = [SUPER_ADMIN_EMAIL];
 
 async function sendAdminEmails(subject: string, text: string, html?: string): Promise<void> {
   await Promise.all(ADMIN_NOTIFICATION_EMAILS.map(email => sendResendEmail(email, subject, text, html)));

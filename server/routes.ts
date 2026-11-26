@@ -454,6 +454,37 @@ apiRouter.post('/admin/site-settings/logo', authMiddleware, adminOnly, uploadArt
   res.json({ message: 'Website logo uploaded and saved.', logoUrl });
 });
 
+
+// Support chat API (previously called by the UI but missing from the Express router).
+apiRouter.get('/messages', authMiddleware, activeClientOnly, (req: AuthenticatedRequest, res: Response) => {
+  if (req.user!.role !== 'client') return res.status(403).json({ error: 'Client account required.' });
+  return res.json({ messages: db.getSupportMessages(req.user!.id) });
+});
+apiRouter.post('/messages', authMiddleware, activeClientOnly, (req: AuthenticatedRequest, res: Response) => {
+  if (req.user!.role !== 'client' || req.impersonatedBy) return res.status(403).json({ error: 'Only the signed-in artist can send support messages.' });
+  const message = String(req.body?.message || '').trim().slice(0, 4000);
+  if (!message) return res.status(400).json({ error: 'Write a message before sending.' });
+  const saved: SupportMessage = { id: `msg_${crypto.randomUUID()}`, userId: req.user!.id, userEmail: req.user!.email, userName: req.user!.name, senderRole: 'client', senderEmail: req.user!.email, message, createdAt: new Date().toISOString() };
+  db.addSupportMessage(saved);
+  return res.status(201).json({ message: saved });
+});
+apiRouter.get('/admin/messages', authMiddleware, adminOnly, (req: AuthenticatedRequest, res: Response) => {
+  const all = db.getSupportMessages();
+  const grouped = new Map<string, SupportMessage[]>();
+  for (const item of all) grouped.set(item.userId, [...(grouped.get(item.userId) || []), item]);
+  const threads = [...grouped.entries()].map(([userId, messages]) => ({ userId, userName: messages[0].userName, userEmail: messages[0].userEmail, messages }));
+  return res.json({ threads });
+});
+apiRouter.post('/admin/messages/:userId', authMiddleware, adminOnly, (req: AuthenticatedRequest, res: Response) => {
+  const target = db.findUserById(req.params.userId);
+  if (!target || target.role !== 'client') return res.status(404).json({ error: 'Client account not found.' });
+  const message = String(req.body?.message || '').trim().slice(0, 4000);
+  if (!message) return res.status(400).json({ error: 'Write a message before sending.' });
+  const saved: SupportMessage = { id: `msg_${crypto.randomUUID()}`, userId: target.id, userEmail: target.email, userName: target.name, senderRole: 'admin', senderEmail: req.user!.email, message, createdAt: new Date().toISOString() };
+  db.addSupportMessage(saved);
+  return res.status(201).json({ message: saved });
+});
+
 apiRouter.get('/auth/config', (_req: Request, res: Response) => res.json({ provider: 'resend', otpLength: 6 }));
 
 apiRouter.post('/auth/request-otp', async (req: Request, res: Response) => {
@@ -484,13 +515,15 @@ apiRouter.post('/auth/request-otp', async (req: Request, res: Response) => {
 apiRouter.post('/auth/register-artist', async (req: Request, res: Response) => {
   const email = normalizeAuthEmail(req.body?.email);
   const name = String(req.body?.name || '').trim().slice(0,180);
+  const realFirstName = String(req.body?.realFirstName || '').trim().slice(0,90);
+  const realSurname = String(req.body?.realSurname || '').trim().slice(0,90);
   const artistName = String(req.body?.artistName || '').trim().slice(0,180);
   const phone = String(req.body?.phone || '').trim().slice(0,40);
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
-  if (!name || !artistName) return res.status(400).json({ error: 'Your full name and artist name are required.' });
+  if (!realFirstName || !realSurname || !artistName) return res.status(400).json({ error: 'Your real first name, surname and artist name are required.' });
   if (DESIGNATED_ADMIN_EMAILS.includes(email)) return res.status(409).json({ error: 'This email is reserved for STB Academy administration.' });
   if (db.findUserByEmail(email)) return res.status(409).json({ error: 'An account with this email already exists. Sign in instead.' });
-  const user: User = { id: `usr_${crypto.randomUUID()}`, email, name, artistName, role: 'client', passwordHash: hashPassword(crypto.randomBytes(32).toString('hex')), status: 'active', createdAt: new Date().toISOString(), phone, country: String(req.body?.country || 'South Africa').slice(0,80), adminRoyaltyAllocation: 0 };
+  const user: User = { id: `usr_${crypto.randomUUID()}`, email, name: `${realFirstName} ${realSurname}`, realFirstName, realSurname, artistName, role: 'client', passwordHash: hashPassword(crypto.randomBytes(32).toString('hex')), status: 'active', createdAt: new Date().toISOString(), phone, country: String(req.body?.country || 'South Africa').slice(0,80), adminRoyaltyAllocation: 0 };
   db.createUser(user);
   try { await requestEmailOtp(email); }
   catch (error:any) { db.deleteUser(user.id); console.error('[AUTH REGISTER] OTP send failed:', error?.message || error); return res.status(502).json({ error: 'Account could not be verified because the email code could not be sent. Please try again later.' }); }
@@ -1191,7 +1224,7 @@ apiRouter.patch('/releases/:id/client-edit', authMiddleware, activeClientOnly, (
   const resubmitted = existing.status === 'Corrections Required';
   const statusHistory = [...(existing.statusHistory || []), ...(resubmitted ? [{ status:'Pending Review', timestamp:new Date().toISOString(), note:'Artist resubmitted the corrected release.' }] : [])];
   const updated = db.updateRelease(existing.id, { title, genre, subGenre, language, lyricsLanguage, lyrics, clientNotes, targetReleaseDate, tracks, ...artworkPatch, ...(resubmitted ? { status:'Pending Review' as ReleaseStatus, statusHistory } : {}), updatedAt: new Date().toISOString() });
-  if(resubmitted) void sendNotification({recipientEmail:'mxldiroba@gmail.com,external.usage8@yahoo.com',recipientName:'STB Academy Operations',subject:`Corrected release resubmitted — ${updated?.title||title}`,template:'status_change',metadata:{releaseId:existing.id,artistName:existing.artistName,status:'Pending Review'}});
+  if(resubmitted) void sendNotification({recipientEmail:SUPER_ADMIN_EMAIL,recipientName:'STB Academy Platform Owner',subject:`Corrected release resubmitted — ${updated?.title||title}`,template:'status_change',metadata:{releaseId:existing.id,artistName:existing.artistName,status:'Pending Review'}});
   return res.json({ message: 'Submission details updated.', release: updated });
 });
 
@@ -1528,12 +1561,12 @@ apiRouter.post('/video-submissions', authMiddleware, activeClientOnly, (req: Aut
   const videoDate = new Date(`${String(releaseDate).trim()}T00:00:00`).getTime(); const minVideoDate = new Date(); minVideoDate.setHours(0,0,0,0); minVideoDate.setDate(minVideoDate.getDate()+7);
   if (!Number.isFinite(videoDate) || videoDate < minVideoDate.getTime()) return res.status(400).json({ error: 'Choose a video release date at least 7 days ahead.' });
   const now = new Date().toISOString();
-  const item: VideoSubmission = { id: `vid_${crypto.randomUUID()}`, userId: user.id, userEmail: user.email, clientName: user.name, artistName: videoPrimaryArtists.join(', ').slice(0,500), primaryArtists: videoPrimaryArtists, featuredArtists: videoFeaturedArtists, description: String(description).trim().slice(0,10000), youtubeDescription: String(youtubeDescription || '').slice(0,10000) || undefined, lyrics: String(lyrics || '').slice(0,20000) || undefined, videoTitle: String(videoTitle).trim().slice(0,180), videoType: ['Official Music Video','Visualizer','Lyric Video','Other'].includes(videoType) ? videoType : 'Official Music Video', videoUrl: String(sourceDownloadUrl).trim().slice(0,2000), videoFilename: 'External video download link', storedVideoFilename: undefined, fileSize: 0, artworkUrl: String(artworkUrl), artworkFilename: String(artworkFilename || 'video-cover.jpg'), storedArtworkFilename: String(storedArtworkFilename), genre: String(genre || '').trim(), subGenre: String(subGenre || '').trim(), songLanguage: String(songLanguage || language || '').trim(), lyricsLanguage: String(lyricsLanguage || '').trim(), version: String(version || '1.0').trim().slice(0,40), labelName: String(labelName || '').trim().slice(0,180), publisher: String(publisher || '').trim().slice(0,180), lyricist: String(lyricist || '').trim().slice(0,180), composer: String(composer || '').trim().slice(0,180), contributors: String(contributors || '').trim(), dspSelections: Array.isArray(dspSelections) ? dspSelections : [], director: String(director || '').trim().slice(0,180) || undefined, language: String(language || '').trim().slice(0,80) || undefined, explicit: !!explicit, releaseDate: String(releaseDate || '').trim() || undefined, notes: String(notes || '').trim().slice(0,3000) || undefined, status: 'Pending Review', grossRoyaltyAmount: 0, royaltyAmount: 0, labelShareAmount: 0, createdAt: now, updatedAt: now };
+  const item: VideoSubmission = { id: `vid_${crypto.randomUUID()}`, userId: user.id, userEmail: user.email, clientName: user.name, artistName: videoPrimaryArtists.join(', ').slice(0,500), primaryArtists: videoPrimaryArtists, featuredArtists: videoFeaturedArtists, primaryArtistProfiles: Array.isArray(req.body?.primaryArtistProfiles) ? req.body.primaryArtistProfiles : [], featuredArtistProfiles: Array.isArray(req.body?.featuredArtistProfiles) ? req.body.featuredArtistProfiles : [], description: String(description).trim().slice(0,10000), youtubeDescription: String(youtubeDescription || '').slice(0,10000) || undefined, lyrics: String(lyrics || '').slice(0,20000) || undefined, videoTitle: String(videoTitle).trim().slice(0,180), videoType: ['Official Music Video','Visualizer','Lyric Video','Other'].includes(videoType) ? videoType : 'Official Music Video', videoUrl: String(sourceDownloadUrl).trim().slice(0,2000), videoFilename: 'External video download link', storedVideoFilename: undefined, fileSize: 0, artworkUrl: String(artworkUrl), artworkFilename: String(artworkFilename || 'video-cover.jpg'), storedArtworkFilename: String(storedArtworkFilename), genre: String(genre || '').trim(), subGenre: String(subGenre || '').trim(), songLanguage: String(songLanguage || language || '').trim(), lyricsLanguage: String(lyricsLanguage || '').trim(), version: String(version || '1.0').trim().slice(0,40), labelName: String(labelName || '').trim().slice(0,180), publisher: String(publisher || '').trim().slice(0,180), lyricist: String(lyricist || '').trim().slice(0,180), composer: String(composer || '').trim().slice(0,180), contributors: String(contributors || '').trim(), dspSelections: Array.isArray(dspSelections) ? dspSelections : [], director: String(director || '').trim().slice(0,180) || undefined, language: String(language || '').trim().slice(0,80) || undefined, explicit: !!explicit, releaseDate: String(releaseDate || '').trim() || undefined, notes: String(notes || '').trim().slice(0,3000) || undefined, status: 'Pending Review', grossRoyaltyAmount: 0, royaltyAmount: 0, labelShareAmount: 0, createdAt: now, updatedAt: now };
   db.createVideoSubmission(item);
-  upsertClientArtistLibrary(user.id, artistCreditsFromNames(videoPrimaryArtists, videoFeaturedArtists));
+  upsertClientArtistLibrary(user.id, [ ...(Array.isArray(req.body?.primaryArtistProfiles) ? req.body.primaryArtistProfiles.map((a:any)=>({...a, role:'primary' as const})) : videoPrimaryArtists.map(name=>({name,role:'primary' as const}))), ...(Array.isArray(req.body?.featuredArtistProfiles) ? req.body.featuredArtistProfiles.map((a:any)=>({...a, role:'featured' as const})) : videoFeaturedArtists.map(name=>({name,role:'featured' as const}))) ]);
   void Promise.all([
     sendAdminVideoSubmissionEmail({ ...item, clientName: user.name, email: user.email, createdAt: now }),
-    sendNotification({ recipientEmail: 'mxldiroba@gmail.com, external.usage8@yahoo.com, remoabetswemolefi@gmail.com', recipientName: 'STB Academy Administration', subject: `New Video Distribution Submission — ${item.videoTitle}`, template: 'submission_received', metadata: { submissionId: item.id, artistName: item.artistName, clientName: user.name, clientEmail: user.email, videoTitle: item.videoTitle, status: item.status } }),
+    sendNotification({ recipientEmail: SUPER_ADMIN_EMAIL, recipientName: 'STB Academy Platform Owner', subject: `New Video Distribution Submission — ${item.videoTitle}`, template: 'submission_received', metadata: { submissionId: item.id, artistName: item.artistName, clientName: user.name, clientEmail: user.email, videoTitle: item.videoTitle, status: item.status } }),
   ]).catch(err => console.error('[VIDEO] Admin notification failed:', err));
   return res.status(201).json({ message: 'Your video has been submitted for review.', submission: item });
 });
@@ -1547,7 +1580,7 @@ apiRouter.patch('/video-submissions/:id/client-edit', authMiddleware, activeClie
   if(body.sourceDownloadLinkAccessible!==true||!videoTitle||!description||!/^https?:\/\//i.test(videoUrl||''))return res.status(400).json({error:'Video title, description, a valid download URL and download-access confirmation are required.'});
   const resubmitted=existing.status==='Corrections Required';
   const updated=db.updateVideoSubmission(existing.id,{videoTitle,description,videoUrl,...(resubmitted?{status:'Pending Review' as const}:{}),updatedAt:new Date().toISOString()});
-  if(resubmitted)void sendNotification({recipientEmail:'mxldiroba@gmail.com,external.usage8@yahoo.com',recipientName:'STB Academy Operations',subject:`Corrected video resubmitted — ${videoTitle}`,template:'status_change',metadata:{submissionId:existing.id,artistName:existing.artistName,status:'Pending Review'}});
+  if(resubmitted)void sendNotification({recipientEmail:SUPER_ADMIN_EMAIL,recipientName:'STB Academy Platform Owner',subject:`Corrected video resubmitted — ${videoTitle}`,template:'status_change',metadata:{submissionId:existing.id,artistName:existing.artistName,status:'Pending Review'}});
   return res.json({message:'Video submission updated.',submission:updated});
 });
 apiRouter.delete('/admin/video-submissions/:id/artwork', authMiddleware, superAdminOnly, (req: AuthenticatedRequest, res: Response) => {
