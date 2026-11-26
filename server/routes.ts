@@ -1396,9 +1396,34 @@ apiRouter.post('/releases', authMiddleware, activeClientOnly, async (req: Authen
   }
   const invalidTrack = tracksIn.find((t: any) => !String(t.filename || '').trim() || !/\.mp3$/i.test(String(t.filename || '')) || !isOwnedUploadedAsset(user.id, 'audio', String(t.storedFilename || ''), String(t.fileUrl || '')));
   if (invalidTrack) return res.status(400).json({ error: 'Every track must be an MP3 file uploaded through this portal.' });
+  if (releaseType !== 'Single' && tracksIn.length < 2) return res.status(400).json({ error: 'An EP or Album must contain at least two tracks.' });
+  if (releaseType !== 'Single') {
+    const incompleteTrack = tracksIn.find((t: any) => !String(t.title || '').trim() || !String(t.genre || '').trim() || !String(t.language || '').trim() || !String(t.countryOfRecording || '').trim() || !(Array.isArray(t.primaryArtists) && t.primaryArtists.some((name: any) => String(name || '').trim())));
+    if (incompleteTrack) return res.status(400).json({ error: 'Every EP/Album track requires its own title, primary artist, genre, song language and country of recording.' });
+    const previouslyReleasedTrack = tracksIn.find((t: any) => t.previouslyReleased && (!String(t.originalReleaseDate || '').trim() || !String(t.previousISRC || '').trim() || !String(t.previousUPC || '').trim()));
+    if (previouslyReleasedTrack) return res.status(400).json({ error: 'Previously released tracks require their original release date, ISRC and UPC.' });
+  }
   const tracks = tracksIn.map((t: any, i: number) => {
     const filename = String(t.filename || '').trim(); const fileUrl = String(t.fileUrl || '').trim(); const storedFilename = String(t.storedFilename || '').trim();
-    return { id: `trk_${crypto.randomUUID()}`, trackNumber: i + 1, title: String(t.title || filename.replace(/\.mp3$/i,'')).trim().slice(0,180), version: String(t.version || body.version || '1.0').trim().slice(0,40), filename, storedFilename, fileUrl, fileSize: Number(t.fileSize) || 0, explicit: !!body.explicit };
+    const cleanList = (value: any, max = 30) => Array.isArray(value) ? value.map((x: any) => String(x || '').trim().slice(0,180)).filter(Boolean).slice(0,max) : [];
+    return {
+      id: `trk_${crypto.randomUUID()}`, trackNumber: i + 1,
+      title: String(t.title || filename.replace(/\.mp3$/i,'')).trim().slice(0,180),
+      version: String(t.version || body.version || '1.0').trim().slice(0,40), filename, storedFilename, fileUrl,
+      fileSize: Number(t.fileSize) || 0, explicit: releaseType === 'Single' ? !!body.explicit : !!t.explicit,
+      ...(releaseType !== 'Single' ? {
+        primaryArtists: cleanList(t.primaryArtists), featuredArtists: cleanList(t.featuredArtists),
+        genre: String(t.genre || '').trim().slice(0,100), subGenre: String(t.subGenre || '').trim().slice(0,100),
+        language: String(t.language || '').trim().slice(0,80), lyricsLanguage: String(t.lyricsLanguage || '').trim().slice(0,80),
+        countryOfRecording: String(t.countryOfRecording || '').trim().slice(0,100),
+        composers: cleanList(t.composers), producers: cleanList(t.producers), publishers: cleanList(t.publishers),
+        lyrics: String(t.lyrics || '').slice(0,20000), previouslyReleased: !!t.previouslyReleased,
+        originalReleaseDate: String(t.originalReleaseDate || '').trim().slice(0,20) || undefined,
+        previousISRC: String(t.previousISRC || '').trim().slice(0,40) || undefined,
+        previousUPC: String(t.previousUPC || '').trim().slice(0,40) || undefined,
+        previewStart: Number.isFinite(Number(t.previewStart)) ? Math.max(0, Number(t.previewStart)) : 0,
+      } : {}),
+    };
   });
   const now = new Date().toISOString();
   const release: Release = {

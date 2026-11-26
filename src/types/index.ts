@@ -76,10 +76,25 @@ export interface TrackItem {
   explicit?: boolean;
   // Per-song artist metadata
   primaryArtist?: string;
+  primaryArtists?: string[];
   primaryArtistSpotifyUrl?: string;
   primaryArtistAppleMusicUrl?: string;
   featuredArtists?: string[];
   artistProfiles?: ArtistCredit[];
+  genre?: string;
+  subGenre?: string;
+  language?: string;
+  lyricsLanguage?: string;
+  countryOfRecording?: string;
+  composers?: string[];
+  producers?: string[];
+  publishers?: string[];
+  lyrics?: string;
+  previouslyReleased?: boolean;
+  originalReleaseDate?: string;
+  previousISRC?: string;
+  previousUPC?: string;
+  previewStart?: number;
 }
 
 export interface ReleaseDocumentItem {

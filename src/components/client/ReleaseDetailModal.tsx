@@ -500,7 +500,7 @@ export const ReleaseDetailModal: React.FC<ReleaseDetailModalProps> = ({
               <AudioPlayer
                 src={activeTrack.fileUrl}
                 title={activeTrack.title}
-                artist={release.primaryArtists.join(', ')}
+                artist={activeTrack.primaryArtists?.length ? `${activeTrack.primaryArtists.join(', ')}${activeTrack.featuredArtists?.length ? ` feat. ${activeTrack.featuredArtists.join(', ')}` : ''}` : release.primaryArtists.join(', ')}
                 version={activeTrack.version}
               />
             )}
@@ -529,6 +529,7 @@ export const ReleaseDetailModal: React.FC<ReleaseDetailModalProps> = ({
                         )}
                       </div>
                       <span className="text-[10px] text-neutral-400 font-mono">{t.version || 'Original Mix'} · {t.filename}</span>
+                      {(t.countryOfRecording || t.genre || t.language || t.primaryArtists?.length || t.featuredArtists?.length) && <div className="mt-1 space-y-0.5 text-[10px] text-neutral-500">{t.primaryArtists?.length ? <p>Artists: {t.primaryArtists.join(', ')}{t.featuredArtists?.length ? ` feat. ${t.featuredArtists.join(', ')}` : ''}</p> : null}<p>{[t.genre, t.subGenre, t.language, t.countryOfRecording ? `Recorded in ${t.countryOfRecording}` : ''].filter(Boolean).join(' · ')}</p>{t.lyricsLanguage ? <p>Lyrics language: {t.lyricsLanguage}</p> : null}{t.composers?.length ? <p>Composers: {t.composers.join(', ')}</p> : null}{t.producers?.length ? <p>Producers: {t.producers.join(', ')}</p> : null}{t.publishers?.length ? <p>Publishers: {t.publishers.join(', ')}</p> : null}{t.previewStart ? <p>Preview starts at: {t.previewStart}s</p> : null}{t.previouslyReleased ? <p>Previously released: {t.originalReleaseDate || 'Yes'} · ISRC {t.previousISRC || '—'} · UPC {t.previousUPC || '—'}</p> : null}{t.lyrics ? <p className="whitespace-pre-wrap">Lyrics: {t.lyrics}</p> : null}</div>}
                     </div>
                   </div>
 
