@@ -216,3 +216,42 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .admin-dashboard .admin-primary-action { background-color: var(--admin-accent) !important; border-color: var(--admin-accent) !important; transition: background-color .25s ease, border-color .25s ease; }
 .admin-dashboard .admin-primary-action:hover { filter: brightness(1.12); }
 .admin-dashboard .admin-role-super, .admin-dashboard .admin-role-standard { transition: color .25s ease, background-color .25s ease, border-color .25s ease; }
+
+/* Responsive layout hardening for phones and tablets */
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { width: 100%; max-width: 100%; min-height: 100%; margin: 0; }
+body { overflow-x: hidden; -webkit-text-size-adjust: 100%; }
+#root { overflow-x: clip; }
+img, video, canvas, svg { max-width: 100%; }
+input, select, textarea, button { max-width: 100%; }
+input, select, textarea { min-width: 0; }
+.admin-dashboard, .client-dashboard { width: 100%; max-width: 100vw; overflow-x: clip; }
+.admin-dashboard main, .client-dashboard main, .admin-dashboard section, .client-dashboard section { min-width: 0; }
+.admin-dashboard [class*="grid"], .client-dashboard [class*="grid"] { min-width: 0; }
+.admin-dashboard article, .client-dashboard article { min-width: 0; overflow-wrap: anywhere; }
+.admin-dashboard table, .client-dashboard table { width: 100%; }
+.admin-dashboard pre, .client-dashboard pre { max-width: 100%; overflow-x: auto; }
+
+@media (max-width: 1024px) {
+  .admin-dashboard > div, .client-dashboard > div { max-width: 100%; }
+  .admin-dashboard .max-w-7xl, .client-dashboard .max-w-7xl { max-width: 100%; }
+  .admin-dashboard header > div, .client-dashboard header > div { min-width: 0; }
+}
+@media (max-width: 768px) {
+  .admin-dashboard { padding-bottom: max(5rem, env(safe-area-inset-bottom)); }
+  .admin-dashboard > div, .client-dashboard > div { padding-left: 12px !important; padding-right: 12px !important; }
+  .admin-dashboard header.sticky, .client-dashboard header.sticky { padding-left: 12px !important; padding-right: 12px !important; }
+  .admin-dashboard header.sticky > div, .client-dashboard header.sticky > div { height: auto !important; min-height: 64px; padding-top: 10px; padding-bottom: 10px; flex-wrap: wrap; gap: 8px; }
+  .admin-dashboard nav, .client-dashboard nav { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+  .admin-dashboard [role="tablist"], .client-dashboard [role="tablist"] { max-width: 100%; overflow-x: auto; }
+  .admin-dashboard .fixed.inset-0, .client-dashboard .fixed.inset-0 { align-items: flex-start; padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); }
+  .admin-dashboard .fixed.inset-0 > div, .client-dashboard .fixed.inset-0 > div { width: 100%; max-width: 100%; max-height: calc(100dvh - 16px); overflow-y: auto; margin-top: 0; margin-bottom: 0; border-radius: 14px; }
+  .admin-dashboard .overflow-x-auto, .client-dashboard .overflow-x-auto { max-width: 100%; overscroll-behavior-x: contain; }
+  .admin-dashboard input, .admin-dashboard select, .admin-dashboard textarea, .client-dashboard input, .client-dashboard select, .client-dashboard textarea { font-size: 16px; }
+}
+@media (max-width: 480px) {
+  .admin-dashboard > div, .client-dashboard > div { padding-left: 10px !important; padding-right: 10px !important; }
+  .admin-dashboard header.sticky, .client-dashboard header.sticky { padding-left: 10px !important; padding-right: 10px !important; }
+  .admin-dashboard button, .client-dashboard button { min-height: 38px; }
+  .admin-dashboard .fixed.inset-0 > div, .client-dashboard .fixed.inset-0 > div { border-radius: 12px; }
+}

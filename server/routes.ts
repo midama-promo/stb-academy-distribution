@@ -33,7 +33,7 @@ import type {
   ArtistCredit,
   SupportMessage,
 } from './db.ts';
-import { sendNotification, sendAdminReleaseEmail, sendAdminEnquiryEmail, sendAdminTakedownEmail, sendAdminVevoApplicationEmail, sendAdminVideoSubmissionEmail, sendVideoSubmissionStatusEmail, sendAnnouncementBatch } from './mailer.ts';
+import { sendNotification, sendAdminReleaseEmail, sendAdminEnquiryEmail, sendAdminVevoApplicationEmail, sendAdminVideoSubmissionEmail, sendVideoSubmissionStatusEmail, sendAnnouncementBatch } from './mailer.ts';
 import { requestEmailOtp, verifyEmailOtp } from './otp.ts';
 import { sendNewArtistWelcomeEmail } from './auth-mailer.ts';
 import {
@@ -1155,7 +1155,12 @@ apiRouter.get('/assets/:encoded', (req: Request, res: Response) => {
 apiRouter.get('/releases', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
   if (user.role === 'admin') {
-    const releases = db.getReleases();
+    // Takedown requests are a super-admin-only operational queue. Normal admins
+    // only see the release again after the super admin marks processing complete.
+    const allReleases = db.getReleases();
+    const releases = isSuperAdminEmail(user.email)
+      ? allReleases
+      : allReleases.filter(r => !['Takedown Requested', 'Takedown Processing'].includes(r.status));
     return res.json({ releases });
   }
 
@@ -1212,6 +1217,12 @@ apiRouter.get('/releases/:id', authMiddleware, (req: AuthenticatedRequest, res: 
   const release = db.findReleaseById(req.params.id);
 
   if (!release) {
+    return res.status(404).json({ error: 'Release not found.' });
+  }
+
+  // Normal administrators must not see takedown requests until the super admin
+  // has completed the takedown workflow. The client and super admin retain access.
+  if (user.role === 'admin' && !isSuperAdminEmail(user.email) && ['Takedown Requested', 'Takedown Processing'].includes(release.status)) {
     return res.status(404).json({ error: 'Release not found.' });
   }
 
@@ -1517,6 +1528,9 @@ apiRouter.patch('/releases/:id/workflow-status', authMiddleware, superAdminOnly,
 apiRouter.post('/releases/:id/approve', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res: Response) => {
   const existing = db.findReleaseById(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Release not found.' });
+  if (!isSuperAdminEmail(req.user!.email) && ['Delivered', 'In Distribution'].includes(existing.status)) {
+    return res.status(403).json({ error: 'This release has reached a super-admin-controlled distribution stage. Normal administrators cannot change its approval status.' });
+  }
 
   const now = new Date().toISOString();
   const updatedHistory = [
@@ -1770,6 +1784,9 @@ apiRouter.post('/releases/:id/deny', authMiddleware, adminOnly, async (req: Auth
 
   const existing = db.findReleaseById(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Release not found.' });
+  if (!isSuperAdminEmail(req.user!.email) && ['Delivered', 'In Distribution'].includes(existing.status)) {
+    return res.status(403).json({ error: 'This release has reached a super-admin-controlled distribution stage. Normal administrators cannot change its approval status.' });
+  }
 
   const now = new Date().toISOString();
   const updatedHistory = [
@@ -1817,6 +1834,9 @@ apiRouter.post('/releases/:id/request-corrections', authMiddleware, adminOnly, a
 
   const existing = db.findReleaseById(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Release not found.' });
+  if (!isSuperAdminEmail(req.user!.email) && ['Delivered', 'In Distribution'].includes(existing.status)) {
+    return res.status(403).json({ error: 'This release has reached a super-admin-controlled distribution stage. Normal administrators cannot change its approval status.' });
+  }
 
   const now = new Date().toISOString();
   const updatedHistory = [
@@ -2461,8 +2481,9 @@ apiRouter.post('/releases/:id/takedown-request', authMiddleware, activeClientOnl
   if (req.impersonatedBy || req.user!.role !== 'client' || release.userId !== req.user!.id) return res.status(403).json({ error: 'Only the signed-in artist can request a takedown.' });
   if (release.status === 'Takedown Completed' || release.status === 'Takedown Processing') return res.status(400).json({ error: 'A takedown is already being processed for this release.' });
   const updated = db.updateRelease(release.id, { status: 'Takedown Requested', statusHistory: [...(release.statusHistory || []), { status: 'Takedown Requested', timestamp: new Date().toISOString(), updatedBy: req.user!.name, note: 'Takedown requested by client.' }] });
-  if (updated) void sendAdminTakedownEmail(updated);
-  res.json({ message: 'Takedown request submitted.', release: updated });
+  // The request is routed into the super-admin release queue. It is deliberately
+  // not exposed to normal admins or sent through the normal-admin email workflow.
+  res.json({ message: 'Takedown request submitted to the super administrator.', release: updated });
 });
 
 apiRouter.post('/releases/:id/takedown-process', authMiddleware, superAdminOnly, (req: AuthenticatedRequest, res: Response) => {

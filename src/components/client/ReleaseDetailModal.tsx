@@ -659,18 +659,19 @@ export const ReleaseDetailModal: React.FC<ReleaseDetailModalProps> = ({
 
               {/* Primary Decision Action Buttons */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Once the super admin sets a final distribution milestone, normal-admin decisions lock. */}
                 {/* APPROVE RELEASE BUTTON */}
-                {release.status === 'Approved' ? <div className="flex items-center justify-center rounded-xl border border-orange-800/50 bg-orange-950/20 px-3 py-3 text-center text-xs font-bold text-orange-200">Approved · awaiting distribution decision</div> : <button type="button" disabled={actionLoading} onClick={handleApprove} className="py-3 px-4 bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"><CheckCircle2 className="w-4 h-4"/><span>APPROVE RELEASE</span></button>}
+                {(release.status === 'Delivered' || release.status === 'In Distribution') && !isSuperAdmin ? <button type="button" disabled className="py-3 px-4 bg-neutral-800 border border-neutral-700 text-neutral-500 font-extrabold text-xs uppercase tracking-wider rounded-xl cursor-not-allowed opacity-60">APPROVAL LOCKED BY SUPER ADMIN</button> : release.status === 'Approved' ? <div className="flex items-center justify-center rounded-xl border border-orange-800/50 bg-orange-950/20 px-3 py-3 text-center text-xs font-bold text-orange-200">Approved · awaiting distribution decision</div> : <button type="button" disabled={actionLoading} onClick={handleApprove} className="py-3 px-4 bg-orange-600 hover:bg-orange-500 disabled:bg-neutral-800 disabled:border disabled:border-neutral-700 disabled:text-neutral-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"><CheckCircle2 className="w-4 h-4"/><span>APPROVE RELEASE</span></button>}
 
                 {/* DENY RELEASE BUTTON */}
                 <button
                   type="button"
-                  disabled={actionLoading || release.status === 'Denied' || release.status === 'Completed'}
+                  disabled={actionLoading || release.status === 'Denied' || release.status === 'Completed' || (!isSuperAdmin && ['Delivered','In Distribution'].includes(release.status))}
                   onClick={() => {
                     setShowDenyPrompt(true);
                     setShowCorrectionsPrompt(false);
                   }}
-                  className="py-3 px-4 bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-orange-950 flex items-center justify-center gap-2 cursor-pointer"
+                  className="py-3 px-4 bg-orange-600 hover:bg-orange-500 disabled:bg-neutral-800 disabled:border disabled:border-neutral-700 disabled:text-neutral-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-orange-950 flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <XCircle className="w-4 h-4" />
                   <span>DENY RELEASE</span>
@@ -679,20 +680,22 @@ export const ReleaseDetailModal: React.FC<ReleaseDetailModalProps> = ({
                 {/* REQUEST CORRECTIONS BUTTON */}
                 <button
                   type="button"
-                  disabled={actionLoading || release.status === 'Completed'}
+                  disabled={actionLoading || release.status === 'Completed' || (!isSuperAdmin && ['Delivered','In Distribution'].includes(release.status))}
                   onClick={() => {
                     setShowCorrectionsPrompt(true);
                     setShowDenyPrompt(false);
                   }}
-                  className="py-3 px-4 bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-orange-950 flex items-center justify-center gap-2 cursor-pointer"
+                  className="py-3 px-4 bg-orange-600 hover:bg-orange-500 disabled:bg-neutral-800 disabled:border disabled:border-neutral-700 disabled:text-neutral-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-orange-950 flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <RotateCcw className="w-4 h-4" />
                   <span>CORRECTIONS REQUIRED</span>
                 </button>
               </div>
 
+              {!isSuperAdmin && ['Delivered','In Distribution'].includes(release.status) && <p className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs text-neutral-400">This release is now controlled by the super administrator. Approval, rejection and corrections actions are locked.</p>}
+
               {/* Optional Approval Note input */}
-              {release.status !== 'Approved' && (
+              {release.status !== 'Approved' && (release.status !== 'Delivered' && release.status !== 'In Distribution' || isSuperAdmin) && (
                 <div className="pt-2">
                   <label className="block text-[11px] font-semibold text-neutral-400 mb-1">
                     Optional Approval Note to Client:

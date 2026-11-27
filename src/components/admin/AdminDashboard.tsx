@@ -498,6 +498,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const filteredReleases = releases.filter((r) => {
+    if (!isSuperAdmin && ['Takedown Requested', 'Takedown Processing'].includes(r.status)) return false;
     if (selectedClientForView && r.userId !== selectedClientForView.id) {
       return false;
     }

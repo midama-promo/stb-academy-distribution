@@ -248,7 +248,7 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
   });
 
   return (
-    <div className={`min-h-screen text-neutral-100 pb-20 transition-colors duration-500 bg-[radial-gradient(ellipse_at_top,_rgba(249,115,22,0.10),_transparent_45%),#08080d]`}>
+    <div className={`client-dashboard min-h-screen text-neutral-100 pb-20 transition-colors duration-500 bg-[radial-gradient(ellipse_at_top,_rgba(249,115,22,0.10),_transparent_45%),#08080d]`}>
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       {/* Admin Impersonation Notice Bar */}
       {isImpersonating && (
