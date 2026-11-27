@@ -1,0 +1,19 @@
+STB Academy - OAC Requests Admin Inbox
+
+Changes:
+- Clients submit YouTube Official Artist Channel requests directly from the client dashboard.
+- Requests are stored in the application's existing persistent database state.
+- The super-admin dashboard has an OAC Requests tab showing client details, artist name,
+  original YouTube channel URL, Topic channel URLs, submission date and review status.
+- The OAC inbox refreshes automatically every 20 seconds while open.
+- Super admins can update status (Pending Review, Under Review, Approved, Rejected)
+  and save internal review notes.
+- OAC request submission no longer opens or prepares an email.
+- The separate "Request Content ID review" client-dashboard button has been removed.
+- Existing per-track Content ID metadata selection in audio submissions is unchanged.
+
+Deployment:
+- Replace the project files with the contents of this ZIP and deploy normally.
+- No new environment variables are required.
+- Existing database records are preserved; older database states receive an empty OAC
+  request collection during the normal schema migration.

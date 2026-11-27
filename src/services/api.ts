@@ -1,4 +1,4 @@
-import { User, Release, Enquiry, NotificationLog, AdminStats, ReleaseStatus, WithdrawalRequest, ArtistCredit } from '../types';
+import { User, Release, Enquiry, OacRequest, NotificationLog, AdminStats, ReleaseStatus, WithdrawalRequest, ArtistCredit } from '../types';
 
 export interface PlanUsageResponse {
   planId: 'free' | 'starter';
@@ -538,6 +538,17 @@ class ApiService {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     });
+  }
+
+  // YouTube Official Artist Channel requests
+  async submitOacRequest(payload: { artistName: string; topicChannelLinks: string[]; originalYoutubeChannel: string }): Promise<{ message: string; request: OacRequest }> {
+    return this.request('/api/oac-requests', { method: 'POST', body: JSON.stringify(payload) });
+  }
+  async getAdminOacRequests(): Promise<{ requests: OacRequest[] }> {
+    return this.request('/api/admin/oac-requests');
+  }
+  async updateOacRequest(id: string, payload: { status: OacRequest['status']; adminNote?: string }): Promise<{ message: string; request: OacRequest }> {
+    return this.request(`/api/admin/oac-requests/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) });
   }
 
   // Notifications

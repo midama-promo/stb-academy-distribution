@@ -233,6 +233,20 @@ export interface Enquiry {
   status: 'new' | 'read' | 'replied';
 }
 
+export interface OacRequest {
+  id: string;
+  userId: string;
+  clientName: string;
+  artistName: string;
+  email: string;
+  topicChannelLinks: string[];
+  originalYoutubeChannel: string;
+  status: 'Pending Review' | 'Under Review' | 'Approved' | 'Rejected';
+  adminNote?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface NotificationLog {
   id: string;
   recipientEmail: string;

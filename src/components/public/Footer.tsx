@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Logo } from '../common/Logo';
-import { Mail, Shield, Lock, ArrowUp } from 'lucide-react';
+import { Mail, Shield, Lock, ArrowUp, FileText, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface FooterProps {
@@ -31,7 +31,7 @@ export const Footer: React.FC<FooterProps> = ({
     <footer className="bg-neutral-950 text-neutral-400 text-xs border-t border-neutral-900 pt-16 pb-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 pb-12 border-b border-neutral-900">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-10 pb-12 border-b border-neutral-900">
           
           {/* Brand Info */}
           <div className="lg:col-span-2 space-y-4">
@@ -114,6 +114,15 @@ export const Footer: React.FC<FooterProps> = ({
                   Contact Management
                 </button>
               </li>
+            </ul>
+          </div>
+
+          {/* Legal documents */}
+          <div className="space-y-3">
+            <h4 className="text-neutral-200 font-bold uppercase tracking-wider font-mono text-[11px]">Legal</h4>
+            <ul className="space-y-2">
+              <li><a href="#terms-and-conditions" className="inline-flex items-center gap-2 hover:text-white transition-colors"><FileText className="h-3.5 w-3.5 text-orange-500" />Terms &amp; Conditions</a></li>
+              <li><a href="#privacy-policy" className="inline-flex items-center gap-2 hover:text-white transition-colors"><ShieldCheck className="h-3.5 w-3.5 text-orange-500" />Privacy Policy</a></li>
             </ul>
           </div>
 

@@ -36,7 +36,7 @@ import {
   ShieldAlert
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { Release, User, Enquiry, AdminStats, ReleaseStatus, WithdrawalRequest } from '../../types';
+import { Release, User, Enquiry, OacRequest, AdminStats, ReleaseStatus, WithdrawalRequest } from '../../types';
 import { api } from '../../services/api';
 import { Logo } from '../common/Logo';
 
@@ -68,12 +68,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [siteLogoUploading, setSiteLogoUploading] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
   
-  const [activeTab, setActiveTab] = useState<'releases' | 'clients' | 'campaigns' | 'enquiries' | 'messages' | 'royalties' | 'settings'>('releases');
+  const [activeTab, setActiveTab] = useState<'releases' | 'clients' | 'campaigns' | 'enquiries' | 'oac' | 'messages' | 'royalties' | 'settings'>('releases');
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [releases, setReleases] = useState<Release[]>([]);
   const [videoSubmissions, setVideoSubmissions] = useState<any[]>([]);
   const [clients, setClients] = useState<User[]>([]);
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
+  const [oacRequests, setOacRequests] = useState<OacRequest[]>([]);
+  const [oacSavingId, setOacSavingId] = useState<string | null>(null);
   const [backupBusy, setBackupBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -306,6 +308,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         api.getReleases().then(r => setReleases(r.releases)),
         api.getAdminClients().then(r => setClients(r.clients)),
         api.getAdminEnquiries().then(r => setEnquiries(r.enquiries)),
+        ...(isSuperAdmin ? [api.getAdminOacRequests().then(r => setOacRequests(r.requests || []))] : []),
         (isSuperAdmin ? api.getAdminRoyaltyWithdrawals().then(r => setRoyaltyWithdrawals(r.withdrawals || [])) : api.getAdminRoyaltySummary().then(r => { setAdminRoyaltySummary({totalEarnings:r.totalEarnings,pendingAmount:r.pendingAmount,paidAmount:r.paidAmount,availableAmount:r.availableAmount}); setRoyaltyWithdrawals(r.withdrawals || []); })),
         ...(isSuperAdmin ? [api.getAdminRoyaltyAdmins().then(r => { setAdminRoyaltyAdmins(r.admins); setAdminAllocationInputs(Object.fromEntries(r.admins.map(a=>[a.id,String(a.adminRoyaltyAllocation||0)]))); }), api.getAdminRoyaltyOverview().then(r => setAdminRoyaltyOverview(r)), api.getAdminPayoutProfiles().then(r=>setAdminPayoutProfiles(r.profiles||[]))] : []),
         api.getVideoSubmissions().then(r => setVideoSubmissions(r.submissions || [])),
@@ -331,6 +334,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     window.addEventListener('stbacademy:release-status-updated', handleStatusUpdated);
     return () => window.removeEventListener('stbacademy:release-status-updated', handleStatusUpdated);
   }, []);
+
+
+  // Keep the super-admin OAC inbox current while it is open.
+  useEffect(() => {
+    if (!isSuperAdmin || activeTab !== 'oac') return;
+    let cancelled = false;
+    const refreshOacRequests = async () => {
+      try {
+        const result = await api.getAdminOacRequests();
+        if (!cancelled) setOacRequests(result.requests || []);
+      } catch (err) {
+        console.error('[ADMIN] Could not refresh OAC requests:', err);
+      }
+    };
+    void refreshOacRequests();
+    const interval = window.setInterval(refreshOacRequests, 20000);
+    return () => { cancelled = true; window.clearInterval(interval); };
+  }, [isSuperAdmin, activeTab]);
+
+  const saveOacRequest = async (request: OacRequest, status: OacRequest['status']) => {
+    try {
+      setOacSavingId(request.id);
+      const result = await api.updateOacRequest(request.id, { status, adminNote: request.adminNote || '' });
+      setOacRequests(prev => prev.map(item => item.id === result.request.id ? result.request : item));
+    } catch (err: any) {
+      alert(err?.message || 'Could not update the Official Artist Channel request.');
+    } finally { setOacSavingId(null); }
+  };
 
   const handleToggleClientStatus = async (client: User) => {
     if (client.status === 'disabled') {
@@ -651,6 +682,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <span>Enquiries Desk ({enquiries.length})</span>
           </button>
 
+          {isSuperAdmin && <button
+            onClick={() => setActiveTab('oac')}
+            className={`pb-3 border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'oac' ? 'border-orange-600 text-white font-bold' : 'border-transparent text-neutral-400 hover:text-white'}`}
+          >
+            <Link2 className="w-4 h-4 text-orange-500" />
+            <span>OAC Requests ({oacRequests.filter(request => request.status === 'Pending Review' || request.status === 'Under Review').length})</span>
+          </button>}
+
           <button
             onClick={() => setActiveTab('messages')}
             className={`pb-3 border-b-2 transition-colors flex items-center gap-2 ${
@@ -685,6 +724,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* TAB: CATALOGUE */}
         {isSuperAdmin && activeTab === 'campaigns' && <ClientEmailCampaignManager />}
 
+
+        {isSuperAdmin && activeTab === 'oac' && (
+          <div className="space-y-5">
+            <div>
+              <h2 className="text-xl font-bold text-white">YouTube Official Artist Channel Requests</h2>
+              <p className="mt-1 text-xs text-neutral-400">Requests submitted by clients from their dashboards. New requests refresh automatically while this inbox is open.</p>
+            </div>
+            {oacRequests.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-neutral-800 bg-neutral-900/30 p-8 text-center text-xs text-neutral-500">No Official Artist Channel requests have been submitted yet.</div>
+            ) : oacRequests.map(request => (
+              <article key={request.id} className="space-y-4 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5">
+                <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                  <div><div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-bold text-white">{request.artistName}</h3><span className={`rounded-full border px-2 py-1 text-[10px] ${request.status==='Approved'?'border-emerald-800 bg-emerald-950/40 text-emerald-300':request.status==='Rejected'?'border-red-800 bg-red-950/40 text-red-300':'border-amber-800 bg-amber-950/40 text-amber-300'}`}>{request.status}</span></div><p className="mt-1 text-xs text-neutral-400">{request.clientName} · {request.email}</p></div>
+                  <span className="text-[10px] text-neutral-500">Submitted {new Date(request.createdAt).toLocaleString()}</span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-3"><p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-neutral-500">Original YouTube channel</p><a href={request.originalYoutubeChannel} target="_blank" rel="noreferrer" className="break-all text-xs text-orange-300 hover:underline">{request.originalYoutubeChannel}</a></div>
+                  <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-3"><p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-neutral-500">Topic channel links</p><div className="space-y-1">{request.topicChannelLinks.map((link,index)=><a key={`${request.id}-${index}`} href={link} target="_blank" rel="noreferrer" className="block break-all text-xs text-orange-300 hover:underline">Topic {index+1}: {link}</a>)}</div></div>
+                </div>
+                <label className="block text-xs text-neutral-300">Administrator notes<textarea value={request.adminNote || ''} onChange={e=>setOacRequests(prev=>prev.map(item=>item.id===request.id?{...item,adminNote:e.target.value}:item))} rows={2} maxLength={1500} placeholder="Internal review notes or follow-up details…" className="mt-1 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white"/></label>
+                <div className="flex flex-wrap items-center gap-2"><label className="text-xs text-neutral-400">Status</label><select value={request.status} onChange={e=>setOacRequests(prev=>prev.map(item=>item.id===request.id?{...item,status:e.target.value as OacRequest['status']}:item))} className="rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs text-white"><option>Pending Review</option><option>Under Review</option><option>Approved</option><option>Rejected</option></select><button type="button" disabled={oacSavingId===request.id} onClick={()=>saveOacRequest(request,request.status)} className="rounded-lg bg-orange-600 px-4 py-2 text-xs font-bold text-white hover:bg-orange-500 disabled:opacity-50">{oacSavingId===request.id?'Saving…':'Save review'}</button></div>
+              </article>
+            ))}
+          </div>
+        )}
 
         {activeTab === 'royalties' && (
           <div className="space-y-6">

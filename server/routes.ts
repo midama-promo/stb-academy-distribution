@@ -28,6 +28,7 @@ import type {
   ReleaseDocumentItem,
   WithdrawalRequest,
   VevoApplication,
+  OacRequest,
   VideoSubmission,
   ArtistCredit,
   SupportMessage,
@@ -1694,6 +1695,51 @@ apiRouter.patch('/admin/video-submissions/:id', authMiddleware, adminOnly, (req:
     sendNotification({ recipientEmail: existing.userEmail, recipientName: existing.clientName, subject: `Video Submission Update — ${existing.videoTitle}`, template: 'status_change', metadata: { artistName: existing.artistName, videoTitle: existing.videoTitle, status, adminNote: updated.adminNote || '' } }),
   ]).catch(err => console.error('[VIDEO] Client status email failed:', err));
   return res.json({ submission: updated, message: `Video submission marked ${status}.` });
+});
+
+// ----------------------------------------------------
+// YOUTUBE OFFICIAL ARTIST CHANNEL REQUESTS
+// Requests are stored in the platform database and reviewed in the super-admin portal.
+// ----------------------------------------------------
+apiRouter.post('/oac-requests', authMiddleware, activeClientOnly, (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  if (user.role !== 'client' || req.impersonatedBy) return res.status(403).json({ error: 'Only the signed-in client can submit an Official Artist Channel request.' });
+  const artistName = String(req.body?.artistName || user.artistName || user.name || '').trim().slice(0, 160);
+  const originalYoutubeChannel = String(req.body?.originalYoutubeChannel || '').trim();
+  const topicChannelLinks = Array.isArray(req.body?.topicChannelLinks)
+    ? req.body.topicChannelLinks.map((value: unknown) => String(value || '').trim()).filter(Boolean).slice(0, 5)
+    : [];
+  const isHttpUrl = (value: string) => { try { const parsed = new URL(value); return ['youtube.com','www.youtube.com','m.youtube.com','music.youtube.com','youtu.be','www.youtu.be'].includes(parsed.hostname.toLowerCase()) && (parsed.protocol === 'http:' || parsed.protocol === 'https:'); } catch { return false; } };
+  if (!artistName) return res.status(400).json({ error: 'Artist name is required.' });
+  if (!isHttpUrl(originalYoutubeChannel)) return res.status(400).json({ error: 'Enter a valid original YouTube channel URL.' });
+  if (topicChannelLinks.length < 1 || topicChannelLinks.some(link => !isHttpUrl(link))) return res.status(400).json({ error: 'Enter at least one valid YouTube Topic channel URL (maximum 5).'});
+  const now = new Date().toISOString();
+  const request: OacRequest = {
+    id: `oac_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+    userId: user.id,
+    clientName: user.name,
+    artistName,
+    email: user.email,
+    topicChannelLinks,
+    originalYoutubeChannel,
+    status: 'Pending Review',
+    createdAt: now,
+    updatedAt: now,
+  };
+  db.createOacRequest(request);
+  res.status(201).json({ message: 'Your Official Artist Channel request has been submitted to STB Academy for review.', request });
+});
+
+apiRouter.get('/admin/oac-requests', authMiddleware, superAdminOnly, (_req: AuthenticatedRequest, res: Response) => {
+  res.json({ requests: db.getOacRequests() });
+});
+
+apiRouter.patch('/admin/oac-requests/:id', authMiddleware, superAdminOnly, (req: AuthenticatedRequest, res: Response) => {
+  const status = String(req.body?.status || '');
+  if (!['Pending Review', 'Under Review', 'Approved', 'Rejected'].includes(status)) return res.status(400).json({ error: 'Choose a valid OAC request status.' });
+  const updated = db.updateOacRequest(req.params.id, { status: status as OacRequest['status'], adminNote: String(req.body?.adminNote || '').trim().slice(0, 1500) || undefined, updatedAt: new Date().toISOString() });
+  if (!updated) return res.status(404).json({ error: 'Official Artist Channel request not found.' });
+  res.json({ message: 'Official Artist Channel request updated.', request: updated });
 });
 
 // ----------------------------------------------------

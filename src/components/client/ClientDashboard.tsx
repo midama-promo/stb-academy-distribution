@@ -74,6 +74,9 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
   const [spotifyClaimMessage, setSpotifyClaimMessage] = useState<string | null>(null);
   const [topicChannelLinks, setTopicChannelLinks] = useState<string[]>(['']);
   const [originalYoutubeChannel, setOriginalYoutubeChannel] = useState('');
+  const [oacArtistName, setOacArtistName] = useState(user?.artistName || user?.name || '');
+  const [oacSubmitting, setOacSubmitting] = useState(false);
+  const [oacMessage, setOacMessage] = useState<{type:'success'|'error';text:string}|null>(null);
 
   useEffect(() => {
     if (!user || user.role !== 'client') return;
@@ -131,6 +134,22 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
   useEffect(() => {
     setSpotifyClaimed(typeof user?.spotifyProfileClaimed === 'boolean' ? user.spotifyProfileClaimed : null);
   }, [user?.spotifyProfileClaimed]);
+
+  const submitOacRequest = async () => {
+    const links = topicChannelLinks.map(link => link.trim()).filter(Boolean);
+    const validUrl = (value: string) => { try { const url = new URL(value); return ['youtube.com','www.youtube.com','m.youtube.com','music.youtube.com','youtu.be','www.youtu.be'].includes(url.hostname.toLowerCase()) && (url.protocol === 'http:' || url.protocol === 'https:'); } catch { return false; } };
+    if (!oacArtistName.trim()) { setOacMessage({type:'error',text:'Enter the artist name for this request.'}); return; }
+    if (!validUrl(originalYoutubeChannel.trim())) { setOacMessage({type:'error',text:'Enter a valid original YouTube channel URL.'}); return; }
+    if (links.length < 1 || links.length > 5 || links.some(link => !validUrl(link))) { setOacMessage({type:'error',text:'Enter at least one valid Topic channel URL, with a maximum of five.'}); return; }
+    setOacSubmitting(true); setOacMessage(null);
+    try {
+      const result = await api.submitOacRequest({artistName:oacArtistName.trim(),topicChannelLinks:links,originalYoutubeChannel:originalYoutubeChannel.trim()});
+      setOacMessage({type:'success',text:result.message || 'Your request has been submitted to the super administrator.'});
+      setTopicChannelLinks(['']); setOriginalYoutubeChannel('');
+    } catch (err:any) {
+      setOacMessage({type:'error',text:err?.message || 'Could not submit your Official Artist Channel request.'});
+    } finally { setOacSubmitting(false); }
+  };
 
   const saveSpotifyClaimStatus = async (claimed: boolean) => {
     if (spotifyClaimSaving) return;
@@ -341,10 +360,18 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
         {!isAccountRestricted && !isImpersonating && <div className="mb-8"><SupportChat /></div>}
         <section className="mb-8 rounded-2xl border border-orange-900/40 bg-gradient-to-br from-orange-950/35 to-neutral-950 p-5">
           <p className="text-[10px] font-black uppercase tracking-[.22em] text-orange-400">Artist services · no STB Academy application fee</p>
-          <h2 className="mt-1 text-lg font-bold text-white">YouTube Official Artist Channel & Content ID</h2>
-          <p className="mt-2 max-w-3xl text-xs leading-5 text-neutral-400">Request a free YouTube Official Artist Channel application or ask STB Academy to review an eligible recording for YouTube Content ID. These services are subject to YouTube and distribution-partner eligibility, rights checks and approval.</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="text-xs text-neutral-300 sm:col-span-2"><div className="mb-2 flex items-center justify-between"><span>Topic channel links (up to 5)</span><button type="button" disabled={topicChannelLinks.length>=5} onClick={()=>setTopicChannelLinks(v=>[...v,''])} className="rounded-lg bg-neutral-800 px-3 py-2 text-[11px] text-white disabled:opacity-40">+ Add Topic link</button></div>{topicChannelLinks.map((link,index)=><div key={index} className="mb-2 flex gap-2"><input type="url" value={link} onChange={e=>setTopicChannelLinks(v=>v.map((x,i)=>i===index?e.target.value:x))} placeholder={`https://www.youtube.com/channel/... (Topic link ${index+1})`} className="min-w-0 flex-1 rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-white"/>{topicChannelLinks.length>1&&<button type="button" onClick={()=>setTopicChannelLinks(v=>v.filter((_,i)=>i!==index))} className="px-2 text-xs text-red-300">Remove</button>}</div>)}</div><label className="text-xs text-neutral-300 sm:col-span-2">One original YouTube channel URL<input type="url" value={originalYoutubeChannel} onChange={e=>setOriginalYoutubeChannel(e.target.value)} placeholder="https://www.youtube.com/@YourChannel" className="mt-1 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-white"/></label></div>
-          <div className="mt-3 flex flex-wrap gap-2"><a href={`mailto:mxldiroba@gmail.com?subject=${encodeURIComponent('Free YouTube Official Artist Channel Request')}&body=${encodeURIComponent(`Artist: ${user?.artistName || user?.name || ''}\nAccount email: ${user?.email || ''}\nTopic channel links:\n${topicChannelLinks.filter(x=>x.trim()).join('\n')}\nOriginal YouTube channel: ${originalYoutubeChannel}\n\nPlease review my eligibility for a YouTube Official Artist Channel request.`)}`} onClick={e=>{if(!originalYoutubeChannel.trim()||!/^https?:\/\//i.test(originalYoutubeChannel)){e.preventDefault();alert('Enter one valid original YouTube channel URL first.');}else if(topicChannelLinks.filter(x=>x.trim()).length<1||topicChannelLinks.filter(x=>x.trim()).length>5||topicChannelLinks.some(x=>x.trim()&&!/^https?:\/\//i.test(x.trim()))){e.preventDefault();alert('Enter at least one valid Topic channel URL, with a maximum of 5.');}}} className="rounded-xl bg-orange-600 px-4 py-2.5 text-xs font-bold text-white">Request free YouTube OAC</a><a href={`mailto:mxldiroba@gmail.com?subject=${encodeURIComponent('YouTube Content ID Eligibility Review')}&body=${encodeURIComponent(`Artist: ${user?.artistName || user?.name || ''}\nAccount email: ${user?.email || ''}\n\nPlease review my recording(s) for YouTube Content ID eligibility.`)}`} className="rounded-xl border border-orange-700 px-4 py-2.5 text-xs font-bold text-orange-300">Request Content ID review</a></div>
+          <h2 className="mt-1 text-lg font-bold text-white">YouTube Official Artist Channel</h2>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-neutral-400">Submit your Official Artist Channel request directly through your client portal. Your details will appear in the STB Academy super-admin dashboard for review; no email needs to be prepared or sent. Approval remains subject to YouTube and distribution-partner eligibility.</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="text-xs text-neutral-300 sm:col-span-2">Artist name<input type="text" value={oacArtistName} onChange={e=>setOacArtistName(e.target.value)} placeholder="Artist name" className="mt-1 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-white"/></label>
+            <div className="text-xs text-neutral-300 sm:col-span-2">
+              <div className="mb-2 flex items-center justify-between"><span>YouTube Topic channel links (at least 1, maximum 5)</span><button type="button" disabled={topicChannelLinks.length>=5 || oacSubmitting} onClick={()=>setTopicChannelLinks(v=>[...v,''])} className="rounded-lg bg-neutral-800 px-3 py-2 text-[11px] text-white disabled:opacity-40">+ Add Topic link</button></div>
+              {topicChannelLinks.map((link,index)=><div key={index} className="mb-2 flex gap-2"><input type="url" value={link} onChange={e=>setTopicChannelLinks(v=>v.map((x,i)=>i===index?e.target.value:x))} placeholder={`https://www.youtube.com/channel/... (Topic link ${index+1})`} className="min-w-0 flex-1 rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-white"/>{topicChannelLinks.length>1&&<button type="button" disabled={oacSubmitting} onClick={()=>setTopicChannelLinks(v=>v.filter((_,i)=>i!==index))} className="px-2 text-xs text-red-300 disabled:opacity-40">Remove</button>}</div>)}
+            </div>
+            <label className="text-xs text-neutral-300 sm:col-span-2">Original YouTube channel URL<input type="url" value={originalYoutubeChannel} onChange={e=>setOriginalYoutubeChannel(e.target.value)} placeholder="https://www.youtube.com/@YourChannel" className="mt-1 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-white"/></label>
+          </div>
+          {oacMessage && <div role="status" className={`mt-3 rounded-xl border px-3 py-2.5 text-xs ${oacMessage.type==='success'?'border-emerald-800 bg-emerald-950/30 text-emerald-300':'border-red-800 bg-red-950/30 text-red-300'}`}>{oacMessage.text}</div>}
+          <div className="mt-4 flex flex-wrap items-center gap-3"><button type="button" onClick={submitOacRequest} disabled={oacSubmitting || isImpersonating || isAccountRestricted} className="rounded-xl bg-orange-600 px-4 py-2.5 text-xs font-bold text-white transition-colors hover:bg-orange-500 disabled:cursor-not-allowed disabled:opacity-50">{oacSubmitting?'Submitting request…':'Submit OAC Request'}</button><span className="text-[10px] text-neutral-500">Your request is saved securely in the platform for super-admin review.</span></div>
         </section>
 
 

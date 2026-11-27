@@ -210,6 +210,20 @@ export interface Enquiry {
   status: 'new' | 'read' | 'replied';
 }
 
+export interface OacRequest {
+  id: string;
+  userId: string;
+  clientName: string;
+  artistName: string;
+  email: string;
+  topicChannelLinks: string[];
+  originalYoutubeChannel: string;
+  status: 'Pending Review' | 'Under Review' | 'Approved' | 'Rejected';
+  adminNote?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CatalogueTrack extends TrackItem {
   isrc?: string;
 }
@@ -315,6 +329,7 @@ export interface DatabaseSchema {
   users: User[];
   releases: Release[];
   enquiries: Enquiry[];
+  oacRequests: OacRequest[];
   notifications: NotificationLog[];
   catalogue: CatalogueEntry[];
   withdrawals: WithdrawalRequest[];
@@ -450,6 +465,7 @@ const INITIAL_DB: DatabaseSchema = {
   ],
   releases: [],
   enquiries: [],
+  oacRequests: [],
   notifications: [],
   catalogue: [],
   withdrawals: [],
@@ -568,6 +584,7 @@ class Database {
     const users: User[] = Array.isArray(parsed.users) ? parsed.users : [];
     const releases: Release[] = Array.isArray(parsed.releases) ? parsed.releases : [];
     const enquiries: Enquiry[] = Array.isArray(parsed.enquiries) ? parsed.enquiries : [];
+    const oacRequests: OacRequest[] = Array.isArray(parsed.oacRequests) ? parsed.oacRequests : [];
     const notifications: NotificationLog[] = Array.isArray(parsed.notifications) ? parsed.notifications : [];
     // STB Academy no longer stores standalone catalogue entries. Clear any legacy records on migration.
     const catalogue: CatalogueEntry[] = [];
@@ -651,6 +668,7 @@ class Database {
       users,
       releases,
       enquiries,
+      oacRequests,
       notifications,
       catalogue,
       withdrawals,
@@ -1230,6 +1248,34 @@ class Database {
   }
 
   // ====================================================
+  // YOUTUBE OFFICIAL ARTIST CHANNEL REQUESTS
+  // ====================================================
+  getOacRequests(): OacRequest[] {
+    return this.getAuthoritativeData().oacRequests || [];
+  }
+
+  getOacRequestsByUserId(userId: string): OacRequest[] {
+    return this.getOacRequests().filter(request => request.userId === userId);
+  }
+
+  createOacRequest(request: OacRequest): OacRequest {
+    return this.mutate(data => {
+      data.oacRequests = Array.isArray(data.oacRequests) ? data.oacRequests : [];
+      data.oacRequests.unshift(request);
+      return request;
+    });
+  }
+
+  updateOacRequest(id: string, updates: Partial<OacRequest>): OacRequest | undefined {
+    return this.mutate(data => {
+      const request = (data.oacRequests || []).find(item => item.id === id);
+      if (!request) return undefined;
+      Object.assign(request, updates);
+      return request;
+    });
+  }
+
+  // ====================================================
   // NOTIFICATION OPERATIONS
   // ====================================================
   getNotifications(): NotificationLog[] {
@@ -1364,11 +1410,12 @@ class Database {
     usersAdded: number;
     releasesAdded: number;
     enquiriesAdded: number;
+    oacRequestsAdded: number;
     notificationsAdded: number;
     catalogueAdded: number;
   } {
     return this.mutate((data) => {
-      const result = { usersAdded: 0, releasesAdded: 0, enquiriesAdded: 0, notificationsAdded: 0, catalogueAdded: 0 };
+      const result = { usersAdded: 0, releasesAdded: 0, enquiriesAdded: 0, oacRequestsAdded: 0, notificationsAdded: 0, catalogueAdded: 0 };
       const addUnique = <T extends { id: string }>(target: T[], incoming: unknown, counter: keyof typeof result) => {
         if (!Array.isArray(incoming)) return;
         for (const item of incoming as T[]) {
@@ -1383,6 +1430,7 @@ class Database {
       addUnique(data.users, snapshot.users, 'usersAdded');
       addUnique(data.releases, snapshot.releases, 'releasesAdded');
       addUnique(data.enquiries, snapshot.enquiries, 'enquiriesAdded');
+      addUnique(data.oacRequests, snapshot.oacRequests, 'oacRequestsAdded');
       addUnique(data.notifications, snapshot.notifications, 'notificationsAdded');
       addUnique(data.catalogue, snapshot.catalogue, 'catalogueAdded');
       if (Array.isArray(snapshot.presavePages)) {
